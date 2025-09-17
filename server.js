@@ -11,7 +11,7 @@ const app = express();
 const PORT = process.env.PORT || 3333; // Porta padrão 3333 ou a definida no .env
 
 // Middlewares de segurança e performance
-app.use(helmet());          // Proteções básicas de segurança HTTP
+app.use(helmet());          // Proteções básicas de segurança HTTPssss
 app.use(compression());     // Compacta as respostas HTTP para melhorar a performance
 app.use(morgan('combined')); // Logger de requisições HTTP
 
