@@ -81,10 +81,10 @@ const authenticateEnvironment = async (req, res, next) => {
 
     // --- Lógica para FornecedorApp ---
     // Credenciais específicas para a sincronização com FornecedorApp
-    // Assumimos que o CNPJ do fornecedor é o que define o ambiente
     if (usuario === 'mentorweb_fornecedor' && senha === 'mentorweb_sync_forn_2024') {
       try {
-        await pool.query('SELECT 1 + 1'); // Testar a conexão para verificar se o banco do fornecedor é acessível
+        // Testar a conexão para verificar se o banco do fornecedor é acessível
+        await pool.query('SELECT 1'); // Executa uma query simples
         req.pool = pool; // Anexa o pool de conexão à requisição
         req.isFornecedorSync = true; // Marca a requisição como sendo de um fornecedor
         req.ambiente = { // Informações do ambiente do fornecedor
@@ -95,6 +95,7 @@ const authenticateEnvironment = async (req, res, next) => {
         };
         return next(); // Prossegue para a próxima middleware/rota
       } catch (error) {
+        // Se a conexão falhar, o banco do fornecedor não é válido
         console.error(`Falha ao conectar ao banco de dados do fornecedor ${banco_dados}:`, error);
         return res.status(401).json({ 
           error: `Credenciais de FornecedorApp inválidas ou banco de dados '${banco_dados}' inacessível.` 
@@ -102,12 +103,12 @@ const authenticateEnvironment = async (req, res, next) => {
       }
     }
 
-    // --- Lógica para ClienteApp (verificação em tb_Ambientes) ---
-    // Para ClienteApp, as credenciais são verificadas na tabela tb_Ambientes
-    // Usamos 'Documento' do header 'cnpj' e 'usuario' do header 'usuario'
+    // --- Lógica para ClienteApp (verificação em tb_ambientes - nomes de tabelas em minúsculas) ---
+    // Para ClienteApp, as credenciais são verificadas em uma tabela de ambientes
     const [rows] = await pool.execute(
-      'SELECT * FROM tb_Ambientes WHERE Documento = ? AND usuario = ? AND Senha = ? AND Ativo = "S"',
-      [cnpj, usuario, senha] // Note: 'banco_dados' não é usado na query SQL para tb_Ambientes
+      // Usamos os nomes de colunas conforme o CREATE TABLE fornecido, e o nome da tabela em minúsculas
+      'SELECT * FROM tb_ambientes WHERE Documento = ? AND usuario = ? AND Senha = ? AND Ativo = "S"',
+      [cnpj, usuario, senha]
     );
 
     if (rows.length === 0) {
@@ -133,90 +134,13 @@ app.get('/health', (req, res) => {
   res.json({ 
     status: 'OK', 
     timestamp: new Date().toISOString(),
-    version: '2.1.0' // Versão atualizada do servidor
+    version: '2.2.0' // Versão atualizada do servidor
   });
 });
 
 // =========================================================
-// ROTAS PARA SINCRONIZAÇÃO GERAL (ClienteApp e FornecedorApp)
+// ROTAS PARA SINCRONIZAÇÃO DE CLIENTEAPP (muchaucom_mentor - tabelas em minúsculas)
 // =========================================================
-
-// Rota para buscar produtos (para ClienteApp ou FornecedorApp)
-app.get('/api/sync/send-produtos', authenticateEnvironment, async (req, res) => {
-  const connection = await req.pool.getConnection();
-  try {
-    const [produtos] = await connection.execute(
-      // Usando os novos nomes de colunas: id, nome, preco_unitario
-      'SELECT id, nome, preco_unitario FROM tb_Produtos ORDER BY nome'
-    );
-    res.json({ success: true, produtos: produtos });
-  } catch (error) {
-    console.error(`Erro ao buscar produtos no ERP (${req.ambiente.banco_dados}):`, error);
-    res.status(500).json({ error: 'Erro ao buscar produtos.' });
-  } finally {
-    connection.release();
-  }
-});
-
-// Rota para buscar clientes (apenas para ClienteApp)
-app.get('/api/sync/send-clientes', authenticateEnvironment, async (req, res) => {
-  if (!req.isClienteSync) {
-    return res.status(403).json({ error: 'Acesso negado: Esta rota é exclusiva para ClienteApp.' });
-  }
-  const connection = await req.pool.getConnection();
-  try {
-    // Usando os novos nomes de colunas: Codigo, Documento, Nome, Ativo
-    const [clientes] = await connection.execute(
-      'SELECT Codigo, Documento, Nome, Ativo FROM tb_Ambientes WHERE Ativo = "S" ORDER BY Nome'
-    );
-    res.json({ success: true, clientes: clientes });
-  } catch (error) {
-    console.error(`Erro ao buscar clientes no ERP (${req.ambiente.banco_dados}):`, error);
-    res.status(500).json({ error: 'Erro ao buscar clientes.' });
-  } finally {
-    connection.release();
-  }
-});
-
-// Rota para buscar formas de pagamento (apenas para ClienteApp)
-app.get('/api/sync/send-formas-pagamento', authenticateEnvironment, async (req, res) => {
-  if (!req.isClienteSync) {
-    return res.status(403).json({ error: 'Acesso negado: Esta rota é exclusiva para ClienteApp.' });
-  }
-  const connection = await req.pool.getConnection();
-  try {
-    // Assumindo uma tabela tb_FormasPagamento com colunas Codigo, forma_pagamento, Ativo
-    const [formas] = await connection.execute(
-      'SELECT Codigo, forma_pagamento, Ativo FROM tb_FormasPagamento WHERE Ativo = "S" ORDER BY forma_pagamento'
-    );
-    res.json({ success: true, formas: formas });
-  } catch (error) {
-    console.error(`Erro ao buscar formas de pagamento no ERP (${req.ambiente.banco_dados}):`, error);
-    res.status(500).json({ error: 'Erro ao buscar formas de pagamento.' });
-  } finally {
-    connection.release();
-  }
-});
-
-// Rota para buscar comandas (apenas para ClienteApp)
-app.get('/api/sync/send-comandas', authenticateEnvironment, async (req, res) => {
-  if (!req.isClienteSync) {
-    return res.status(403).json({ error: 'Acesso negado: Esta rota é exclusiva para ClienteApp.' });
-  }
-  const connection = await req.pool.getConnection();
-  try {
-    // Assumindo uma tabela tb_Comandas com colunas Codigo, comanda, Ativo
-    const [comandas] = await connection.execute(
-      'SELECT Codigo, comanda, Ativo FROM tb_Comandas WHERE Ativo = "S" ORDER BY comanda'
-    );
-    res.json({ success: true, comandas: comandas });
-  } catch (error) {
-    console.error(`Erro ao buscar comandas no ERP (${req.ambiente.banco_dados}):`, error);
-    res.status(500).json({ error: 'Erro ao buscar comandas.' });
-  } finally {
-    connection.release();
-  }
-});
 
 // Rota para receber pedidos do MentorWeb (ClienteApp envia para seu ERP)
 app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) => {
@@ -224,149 +148,260 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
     return res.status(403).json({ error: 'Acesso negado: Esta rota é exclusiva para ClienteApp.' });
   }
 
-  const connection = await req.pool.getConnection(); 
+  const connection = await req.pool.getConnection(); // Obtém uma conexão do pool
   
   try {
-    await connection.beginTransaction();
+    await connection.beginTransaction(); // Inicia uma transação para garantir atomicidade
 
-    const { pedidos } = req.body; 
-    const processedOrders = [];
+    const { pedidos } = req.body; // Pega os pedidos do corpo da requisição
+    const processedOrders = []; // Para armazenar o status dos pedidos processados
 
     for (const pedido of pedidos) {
-      // Inserir o pedido principal na tabela de pedidos (tb_Pedidos)
-      const [resultPedido] = await connection.execute(
-        'INSERT INTO tb_Pedidos (data_hora_lancamento, id_ambiente, valor_total, status, id_pedido_sistema_externo) VALUES (?, ?, ?, ?, ?)',
+      // Supondo que a tabela seja 'tb_pedidos' e os campos correspondam ao seu modelo
+      const [pedidoResult] = await connection.execute(
+        `INSERT INTO tb_pedidos (data_hora_lancamento, id_ambiente, valor_total, status, id_pedido_sistema_externo)
+         VALUES (?, ?, ?, ?, ?)`,
         [
-          new Date(`${pedido.data}T${pedido.hora}`).toISOString().slice(0, 19).replace('T', ' '), // Formato DATETIME
-          pedido.id_cliente, // Corresponde ao ID_Ambiente
-          pedido.total_produtos,
-          'pendente', // Status inicial
-          pedido.id_pedido_mentorweb // ID do pedido vindo do MentorWeb
+          `${pedido.data} ${pedido.hora}`, // Combina data e hora para DATETIME
+          pedido.id_cliente, // Corresponde a id_ambiente
+          pedido.total_produtos, // Corresponde a valor_total
+          pedido.status,
+          pedido.id_lcto_erp || null // Pode ser nulo se não houver ID externo ainda
         ]
       );
-      const pedidoId = resultPedido.insertId;
 
-      // Inserir os itens do pedido na tabela tb_Pedidos_Produtos
+      const id_pedido_inserido = pedidoResult.insertId;
+
       for (const item of pedido.itens) {
+        // Supondo que a tabela seja 'tb_pedidos_produtos'
         await connection.execute(
-          'INSERT INTO tb_Pedidos_Produtos (id_pedido, id_produto, quantidade, preco_unitario, valor_total, identificador_cliente_item) VALUES (?, ?, ?, ?, ?, ?)',
+          `INSERT INTO tb_pedidos_produtos (id_pedido, id_produto, quantidade, preco_unitario, valor_total, identificador_cliente_item)
+           VALUES (?, ?, ?, ?, ?, ?)`,
           [
-            pedidoId,
+            id_pedido_inserido,
             item.id_produto,
             item.quantidade,
-            item.unitario,
-            item.total_produto,
-            item.identificador_cliente_item || 0 // Usar 0 ou outro valor padrão se não fornecido
+            item.unitario, // Corresponde a preco_unitario
+            item.total_produto, // Corresponde a valor_total
+            item.identificador_cliente_item || null // Novo campo, pode ser nulo se não preenchido
           ]
         );
       }
-      processedOrders.push({
-        id_pedido_mentorweb: pedido.id_pedido_mentorweb,
-        codigo_pedido_erp: pedidoId, // O ID gerado pelo seu ERP
-        status: 'processado'
-      });
+      processedOrders.push({ id_pedido_mentorweb: pedido.id_pedido_mentorweb, codigo: id_pedido_inserido });
     }
 
-    await connection.commit();
+    await connection.commit(); // Confirma a transação
     res.json({ success: true, pedidos_inseridos: processedOrders });
-
   } catch (error) {
-    await connection.rollback();
-    console.error(`Erro ao receber pedidos no ERP (${req.ambiente.banco_dados}):`, error);
-    res.status(500).json({ 
-      error: 'Erro ao receber pedidos.',
-      details: error.message
-    });
+    await connection.rollback(); // Desfaz a transação em caso de erro
+    console.error('Erro ao receber pedidos do ClienteApp:', error);
+    res.status(500).json({ error: 'Erro ao processar pedidos.' });
   } finally {
-    connection.release();
+    if (connection) connection.release(); // Libera a conexão
   }
 });
 
+// Rota para buscar produtos do ClienteApp
+app.get('/api/sync/get_produtos', authenticateEnvironment, async (req, res) => {
+  if (!req.isClienteSync) {
+    return res.status(403).json({ error: 'Acesso negado: Esta rota é exclusiva para ClienteApp.' });
+  }
+  const connection = await req.pool.getConnection();
+  try {
+    // Usando os nomes de colunas originais para compatibilidade com o frontend NovaVenda.js/Produtos.js
+    const [rows] = await connection.execute(
+      'SELECT Codigo, Produto, Unitario, Ativo FROM tb_produtos WHERE Ativo = "S" ORDER BY Produto'
+    );
+    // Mapeia os nomes das colunas do DB para o formato esperado pelo frontend
+    const produtosFormatados = rows.map(row => ({
+      codigo: row.Codigo,
+      produto: row.Produto,
+      preco_venda: row.Unitario, // Renomeado para preco_venda
+      ativo: row.Ativo
+    }));
+    res.json({ success: true, produtos: produtosFormatados });
+  } catch (error) {
+    console.error('Erro ao buscar produtos para ClienteApp:', error);
+    res.status(500).json({ error: 'Erro ao buscar produtos.' });
+  } finally {
+    if (connection) connection.release();
+  }
+});
+
+// Rota para buscar clientes do ClienteApp
+app.get('/api/sync/get_clientes', authenticateEnvironment, async (req, res) => {
+  if (!req.isClienteSync) {
+    return res.status(403).json({ error: 'Acesso negado: Esta rota é exclusiva para ClienteApp.' });
+  }
+  const connection = await req.pool.getConnection();
+  try {
+    // Supondo que a tabela tb_ambientes seja a fonte de clientes do ERP
+    const [rows] = await connection.execute(
+      'SELECT Codigo, Nome, Documento, Ativo FROM tb_ambientes WHERE Ativo = "S" ORDER BY Nome'
+    );
+    const clientesFormatados = rows.map(row => ({
+      codigo: row.Codigo,
+      nome: row.Nome,
+      cnpj: row.Documento.length === 14 ? row.Documento : null, // Assume CNPJ se tiver 14 dígitos
+      cpf: row.Documento.length === 11 ? row.Documento : null,   // Assume CPF se tiver 11 dígitos
+      ativo: row.Ativo
+    }));
+    res.json({ success: true, clientes: clientesFormatados });
+  } catch (error) {
+    console.error('Erro ao buscar clientes para ClienteApp:', error);
+    res.status(500).json({ error: 'Erro ao buscar clientes.' });
+  } finally {
+    if (connection) connection.release();
+  }
+});
+
+// Rota para buscar formas de pagamento do ClienteApp
+app.get('/api/sync/get_formas_pagamento', authenticateEnvironment, async (req, res) => {
+  if (!req.isClienteSync) {
+    return res.status(403).json({ error: 'Acesso negado: Esta rota é exclusiva para ClienteApp.' });
+  }
+  const connection = await req.pool.getConnection();
+  try {
+    // Assumindo que o nome da tabela é 'tb_FormaPagamento' com campos 'Codigo', 'Forma_Pagamento', 'Ativo'
+    const [rows] = await connection.execute(
+      'SELECT Codigo, Forma_Pagamento, Ativo FROM tb_formapagamento WHERE Ativo = "S" ORDER BY Forma_Pagamento'
+    );
+    const formasFormatadas = rows.map(row => ({
+      codigo: row.Codigo,
+      forma_pagamento: row.Forma_Pagamento,
+      ativo: row.Ativo
+    }));
+    res.json({ success: true, formas: formasFormatadas });
+  } catch (error) {
+    console.error('Erro ao buscar formas de pagamento para ClienteApp:', error);
+    res.status(500).json({ error: 'Erro ao buscar formas de pagamento.' });
+  } finally {
+    if (connection) connection.release();
+  }
+});
+
+// Rota para buscar comandas do ClienteApp
+app.get('/api/sync/get_comandas', authenticateEnvironment, async (req, res) => {
+  if (!req.isClienteSync) {
+    return res.status(403).json({ error: 'Acesso negado: Esta rota é exclusiva para ClienteApp.' });
+  }
+  const connection = await req.pool.getConnection();
+  try {
+    // Assumindo que o nome da tabela é 'tb_Comandas' com campos 'Codigo', 'Comanda', 'Ativo'
+    const [rows] = await connection.execute(
+      'SELECT Codigo, Comanda, Ativo FROM tb_comandas WHERE Ativo = "S" ORDER BY Comanda'
+    );
+    const comandasFormatadas = rows.map(row => ({
+      codigo: row.Codigo,
+      comanda: row.Comanda,
+      ativo: row.Ativo
+    }));
+    res.json({ success: true, comandas: comandasFormatadas });
+  } catch (error) {
+    console.error('Erro ao buscar comandas para ClienteApp:', error);
+    res.status(500).json({ error: 'Erro ao buscar comandas.' });
+  } finally {
+    if (connection) connection.release();
+  }
+});
+
+
 // =========================================================
-// ROTAS PARA SINCRONIZAÇÃO ESPECÍFICA DO FORNECEDORAPP
+// ROTAS PARA SINCRONIZAÇÃO DE FORNECEDORAPP (muchaucom_pisciNew - tabelas em maiúsculas)
 // =========================================================
 
-// Rota para buscar produtos do FornecedorApp (AGORA APONTA PARA SEND-PRODUTOS GERAL)
-// Mantida por compatibilidade, mas o endpoint geral /api/sync/send-produtos é o preferencial
+// Rota para buscar produtos do FornecedorApp (usado na página PedidosFornecedor)
 app.get('/api/sync/send-produtos-fornecedor', authenticateEnvironment, async (req, res) => {
   if (!req.isFornecedorSync) {
     return res.status(403).json({ error: 'Acesso negado: Esta rota é exclusiva para FornecedorApp.' });
   }
-
   const connection = await req.pool.getConnection();
   try {
     // Usando os novos nomes de colunas: id, nome, preco_unitario
-    const [produtos] = await connection.execute(
-      'SELECT id, nome, preco_unitario FROM tb_Produtos ORDER BY nome'
+    const [rows] = await connection.execute(
+      'SELECT id, nome, preco_unitario FROM tb_Produtos' // Removido 'WHERE Ativo = "S"' pois não há 'Ativo' em tb_Produtos
     );
-    res.json({ success: true, produtos: produtos });
+    const produtosFormatados = rows.map(row => ({
+      codigo: row.id, // Mapeia id do DB para codigo esperado pelo frontend
+      produto: row.nome,
+      preco_venda: row.preco_unitario, // Mapeia preco_unitario do DB para preco_venda
+      // Não há estoque nem codigo_barras nesta tabela, caso precise, adicione ao schema e query
+    }));
+    res.json({ success: true, produtos: produtosFormatados });
   } catch (error) {
-    console.error(`Erro ao buscar produtos no ERP do Fornecedor (${req.ambiente.banco_dados}):`, error);
-    res.status(500).json({ error: 'Erro ao buscar produtos do Fornecedor.' });
+    console.error('Erro ao buscar produtos para FornecedorApp:', error);
+    res.status(500).json({ error: 'Erro ao buscar produtos para fornecedor.' });
   } finally {
-    connection.release();
+    if (connection) connection.release();
   }
 });
 
-
-// Rota para receber pedidos do ClienteApp (FornecedorApp recebe do ClienteApp)
+// Rota para receber pedidos de cliente para o ERP do FornecedorApp
 app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (req, res) => {
   if (!req.isFornecedorSync) {
     return res.status(403).json({ error: 'Acesso negado: Esta rota é exclusiva para FornecedorApp.' });
   }
 
   const connection = await req.pool.getConnection();
+  
   try {
     await connection.beginTransaction();
 
-    const { cliente, produtos, total_pedido, data_pedido } = req.body; // 'cliente' é o nome do cliente que fez o pedido
+    const { produtos, total_pedido, data_pedido, cliente: clienteNome } = req.body;
 
-    // Inserir o pedido principal na tabela tb_Pedidos do Fornecedor
-    const [resultPedido] = await connection.execute(
-      'INSERT INTO tb_Pedidos (data_hora_lancamento, id_ambiente, valor_total, status) VALUES (?, ?, ?, ?)',
+    // Inserir na tabela de cabeçalho de pedidos do fornecedor
+    // A tabela tb_Pedidos do fornecedor usa id_ambiente, valor_total, data_hora_lancamento, status, id_pedido_sistema_externo
+    const [pedidoResult] = await connection.execute(
+      `INSERT INTO tb_Pedidos (data_hora_lancamento, id_ambiente, valor_total, status)
+       VALUES (?, ?, ?, ?)`,
       [
-        data_pedido, // data_pedido já deve vir no formato DATETIME
-        null, // id_ambiente pode ser null ou mapear para um ID interno do fornecedor se houver necessidade
+        data_pedido, // data_pedido já deve vir em formato DATETIME ou string compatível
+        // id_ambiente: Aqui precisamos de um ID de ambiente válido.
+        // Assumindo que 'clienteNome' pode ser o 'Nome' ou 'Documento' em tb_Ambientes
+        // e que precisamos encontrar o 'Codigo' correspondente.
+        // Para simplificar agora, vamos usar um ID fixo ou um placeholder,
+        // mas em produção isso precisaria de uma busca ou um ID passado na requisição.
+        1, // <<=== PLACEHOLDER: Usar um ID_Ambiente real ou buscar pelo clienteNome
         total_pedido,
-        'recebido' // Status inicial para pedidos de fornecedor
+        'processado' // Status inicial do pedido no ERP do fornecedor
       ]
     );
-    const pedidoId = resultPedido.insertId;
 
-    // Inserir os itens do pedido na tabela tb_Pedidos_Produtos
-    for (const item of produtos) {
+    const id_pedido_inserido = pedidoResult.insertId;
+
+    for (const produtoItem of produtos) {
+      // Inserir na tabela de itens de pedido do fornecedor
+      // tb_Pedidos_Produtos: id_pedido, id_produto, quantidade, preco_unitario, valor_total, identificador_cliente_item
       await connection.execute(
-        'INSERT INTO tb_Pedidos_Produtos (id_pedido, id_produto, quantidade, preco_unitario, valor_total, identificador_cliente_item) VALUES (?, ?, ?, ?, ?, ?)',
+        `INSERT INTO tb_Pedidos_Produtos (id_pedido, id_produto, quantidade, preco_unitario, valor_total, identificador_cliente_item)
+         VALUES (?, ?, ?, ?, ?, ?)`,
         [
-          pedidoId,
-          item.id_produto,
-          item.quantidade,
-          item.valor_unitario,
-          item.total_produto,
-          cliente // O nome do cliente agora vai para identificador_cliente_item
+          id_pedido_inserido,
+          produtoItem.id_produto,
+          produtoItem.quantidade,
+          produtoItem.valor_unitario,
+          produtoItem.total_produto,
+          // identificador_cliente_item: Se 'clienteNome' for o identificador, usá-lo ou um ID numérico.
+          // Para simplificar agora, vamos usar um placeholder.
+          1 // <<=== PLACEHOLDER: Usar o identificador de cliente real para o item
         ]
       );
     }
 
     await connection.commit();
-    res.json({ success: true, codigo_pedido: pedidoId, status: 'recebido' });
-
+    res.json({ success: true, codigo_pedido: id_pedido_inserido });
   } catch (error) {
     await connection.rollback();
-    console.error(`Erro ao receber pedido de fornecedor no ERP (${req.ambiente.banco_dados}):`, error);
-    res.status(500).json({ 
-      error: 'Erro ao receber pedido de fornecedor.',
-      details: error.message
-    });
+    console.error('Erro ao receber pedido para FornecedorApp:', error);
+    res.status(500).json({ error: 'Erro ao processar pedido para fornecedor.' });
   } finally {
-    connection.release();
+    if (connection) connection.release();
   }
 });
 
 
-
-// Iniciar o servidor
+// Inicia o servidor
 app.listen(PORT, () => {
-  console.log(`Servidor rodando na porta ${PORT}`);
-  console.log(`Acesse o health check em http://localhost:${PORT}/health`);
+  console.log(`Servidor Node.js rodando na porta ${PORT}`);
+  console.log(`Acesse http://localhost:${PORT}/health para verificar o status.`);
 });
