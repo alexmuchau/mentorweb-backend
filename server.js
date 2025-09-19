@@ -119,10 +119,15 @@ app.get('/api/health', (req, res) => {
 
 // Rota para obter produtos do ERP (ClienteApp busca)
 app.get('/api/sync/send-produtos', authenticateEnvironment, async (req, res) => {
-  if (!req.isClienteSync) return res.status(403).json({ error: 'Acesso negado.' });
+  if (!req.isClienteSync) {
+    return res.status(403).json({ error: 'Acesso negado.' });
+  }
   const connection = await req.pool.getConnection();
   try {
-    const [rows] = await connection.execute('SELECT id, nome, preco_unitario FROM tb_produtos WHERE ativo = "S"'); // Mantendo WHERE Ativo = "S" se tb_produtos tiver essa coluna
+    // CORREÇÃO: Mapeando as colunas reais da sua tb_produtos (muchaucom_mentor)
+    const [rows] = await connection.execute(
+      'SELECT codigo AS id, produto, codigo_barras, preco_venda, estoque, ativo FROM tb_produtos WHERE ativo = "S" ORDER BY produto'
+    );
     res.json({ success: true, produtos: rows, total: rows.length });
   } catch (error) {
     console.error('Erro ao buscar produtos (cliente):', error);
