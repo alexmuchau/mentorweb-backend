@@ -233,7 +233,7 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
           pedido.id_forma_pagamento,
           pedido.id_local_retirada || null, // Garante que é null se não houver
           pedido.total_produtos,
-          pedido.id_pedido_mentorweb
+          pedido.id_lcto_erp
         ]
       );
       const idPedidoERP = resultPedido.insertId;
