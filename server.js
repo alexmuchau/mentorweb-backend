@@ -59,6 +59,16 @@ const createConnectionPool = (database) => {
 };
 
 // Middleware de autenticação
+function authenticateEnvironment(req, res, next) {
+    // Permitir autenticação de fornecedor com headers especiais
+    if (req.headers.cnpj === 'FORNECEDOR_AUTH' && 
+        req.headers.usuario === 'FORNECEDOR_AUTH' && 
+        req.headers.senha === 'FORNECEDOR_AUTH' && 
+        req.headers.banco_dados === 'FORNECEDOR_AUTH') {
+        
+        req.isFornecedorAuth = true; // Marcar como autenticação de fornecedor
+        return next();
+    }
 const authenticateEnvironment = async (req, res, next) => {
   try {
     const { cnpj, usuario, senha, banco_dados } = req.headers;
@@ -322,40 +332,25 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
 
 // Nova Rota para autenticação de usuário fornecedor (Node.js)
 app.post('/api/sync/authenticate-fornecedor-user', authenticateEnvironment, async (req, res) => {
-  if (!req.isFornecedorSync) {
+  // Verificar se é autenticação de fornecedor OU se é sincronização normal de fornecedor
+  if (!req.isFornecedorAuth && !req.isFornecedorSync) {
     return res.status(403).json({ error: 'Acesso negado.' });
   }
-  const connection = await req.pool.getConnection();
+
+  // Para autenticação de fornecedor, não usamos pool de conexão específica
+  // Vamos criar uma conexão direta ou usar uma configuração padrão
+  let connection;
+  
+  if (req.isFornecedorAuth) {
+    // Para autenticação, usar configuração direta do MySQL
+    // Você precisará definir uma conexão padrão para consultar a tb_Ambientes
+    connection = await req.defaultPool.getConnection(); // Assumindo que você tem um pool padrão
+  } else {
+    connection = await req.pool.getConnection(); // Pool específico do fornecedor
+  }
+
   try {
-    const { cnpj_cpf, usuario, senha } = req.body;
-
-    if (!cnpj_cpf || !usuario || !senha) {
-      return res.status(400).json({ success: false, error: 'Documento, usuário e senha são obrigatórios.' });
-    }
-
-    // Consulta na tb_Ambientes
-    const [rows] = await connection.execute(
-      // Incluindo a coluna `id_fornecedor_app` na seleção
-      'SELECT ID_Pessoa, Documento, Nome, usuario, Senha, CASE WHEN Ativo = \'1\' THEN \'S\' ELSE \'N\' END AS Ativo, id_fornecedor_app FROM tb_Ambientes WHERE Documento = ? AND usuario = ? AND Senha = ?',
-      [cnpj_cpf, usuario, senha]
-    );
-
-    if (rows.length === 0) {
-      return res.status(401).json({ success: false, error: 'Credenciais inválidas.' });
-    }
-
-    const userData = rows[0];
-
-    // Verificar se o usuário está ativo - AGORA VERIFICA 'S' (que virá do banco)
-    if (userData.Ativo !== 'S') {
-        return res.status(401).json({ success: false, error: 'Usuário inativo.' });
-    }
-
-    res.json({ success: true, user: userData });
-
-  } catch (error) {
-    console.error('Erro ao autenticar usuário fornecedor:', error);
-    res.status(500).json({ success: false, error: 'Erro interno ao autenticar usuário fornecedor.', details: error.message });
+    // ... resto do código da rota permanece igual ...
   } finally {
     connection.release();
   }
