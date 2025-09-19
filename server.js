@@ -43,7 +43,6 @@ app.use(express.urlencoded({ extended: true }));
 // Mapa de pools de conexão MySQL
 const connections = new Map();
 
-// Função para criar um pool de conexão
 const createConnectionPool = (database) => {
   return mysql.createPool({
     host: process.env.DB_HOST || 'localhost',
@@ -53,8 +52,9 @@ const createConnectionPool = (database) => {
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0,
-    acquireTimeout: 60000,
-    timeout: 60000,
+    // Remover ou comentar as linhas abaixo para evitar os warnings
+    // acquireTimeout: 60000, 
+    // timeout: 60000,
   });
 };
 
