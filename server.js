@@ -320,6 +320,45 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
   }
 });
 
+// Nova Rota para autenticação de usuário fornecedor (Node.js)
+app.post('/api/sync/authenticate-fornecedor-user', authenticateEnvironment, async (req, res) => {
+  if (!req.isFornecedorSync) {
+    return res.status(403).json({ error: 'Acesso negado.' });
+  }
+  const connection = await req.pool.getConnection();
+  try {
+    const { cnpj_cpf, usuario, senha } = req.body;
+
+    if (!cnpj_cpf || !usuario || !senha) {
+      return res.status(400).json({ success: false, error: 'Documento, usuário e senha são obrigatórios.' });
+    }
+
+    // Consulta na tb_Ambientes
+    const [rows] = await connection.execute(
+      'SELECT ID_Pessoa, Documento, Nome, usuario, Senha, Ativo FROM tb_Ambientes WHERE Documento = ? AND usuario = ? AND Senha = ?',
+      [cnpj_cpf, usuario, senha]
+    );
+
+    if (rows.length === 0) {
+      return res.status(401).json({ success: false, error: 'Credenciais inválidas.' });
+    }
+
+    const userData = rows[0];
+
+    // Verificar se o usuário está ativo
+    if (userData.Ativo !== 'S') {
+        return res.status(401).json({ success: false, error: 'Usuário inativo.' });
+    }
+
+    res.json({ success: true, user: userData });
+
+  } catch (error) {
+    console.error('Erro ao autenticar usuário fornecedor:', error);
+    res.status(500).json({ success: false, error: 'Erro interno ao autenticar usuário fornecedor.', details: error.message });
+  } finally {
+    connection.release();
+  }
+});
 
 // Tratamento de erros
 app.use((err, req, res, next) => {
