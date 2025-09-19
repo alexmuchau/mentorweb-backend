@@ -241,7 +241,7 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
       if (pedido.itens && Array.isArray(pedido.itens)) {
         for (const item of pedido.itens) {
           await connection.execute(
-            'INSERT INTO tb_pedido_produto (id_pedido, id_produto, quantidade, unitario, total_produto) VALUES (?, ?, ?, ?, ?)',
+            'INSERT INTO tb_pedidos_produtos (id_pedido, id_produto, quantidade, unitario, total_produto) VALUES (?, ?, ?, ?, ?)',
             [idPedidoERP, item.id_produto, item.quantidade, item.unitario, item.total_produto]
           );
         }
