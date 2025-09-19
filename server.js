@@ -139,13 +139,23 @@ app.get('/api/sync/send-produtos', authenticateEnvironment, async (req, res) => 
 
 // Rota para obter clientes do ERP (ClienteApp busca)
 app.get('/api/sync/send-clientes', authenticateEnvironment, async (req, res) => {
-  if (!req.isClienteSync) return res.status(403).json({ error: 'Acesso negado.' });
+  if (!req.isClienteSync) {
+    return res.status(403).json({ error: 'Acesso negado.' });
+  }
   const connection = await req.pool.getConnection();
   try {
-    const [rows] = await connection.execute('SELECT codigo, nome, cnpj, cpf, ativo FROM tb_clientes WHERE ativo = "S"');
+    const [rows] = await connection.execute(
+      'SELECT codigo, nome, cnpj, cpf, ativo FROM tb_clientes WHERE ativo = "S" ORDER BY nome'
+    );
+    
+    // --- ADICIONE ESTAS DUAS LINHAS PARA DEBUG ---
+    console.log("DEBUG - Conteúdo de 'rows' antes de enviar JSON:", rows);
+    console.log("DEBUG - Tamanho de 'rows' antes de enviar JSON:", rows.length);
+    // ---------------------------------------------
+
     res.json({ success: true, clientes: rows, total: rows.length });
   } catch (error) {
-    console.error('Erro ao buscar clientes:', error);
+    console.error('Erro ao buscar clientes (cliente):', error);
     res.status(500).json({ success: false, error: 'Erro ao buscar clientes.', details: error.message });
   } finally {
     connection.release();
