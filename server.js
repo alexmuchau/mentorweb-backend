@@ -111,7 +111,7 @@ const authenticateEnvironment = async (req, res, next) => {
     // Aqui você pode ter uma tabela de usuários ClienteApp no seu ERP, por exemplo 'tb_clientes_app'
     // ou usar o cnpj/usuario/senha de um usuário admin do ERP
     const [rows] = await pool.execute(
-      'SELECT * FROM tb_Ambientes WHERE cnpj = ? AND usuario = ? AND senha = ? AND ativo = "S"',
+      'SELECT * FROM tb_ambientes WHERE cnpj = ? AND usuario = ? AND senha = ? AND ativo = "S"',
       [cnpj, usuario, senha]
     );
 
