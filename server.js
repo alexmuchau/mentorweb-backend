@@ -195,52 +195,56 @@ app.get('/api/sync/send-comandas', authenticateEnvironment, async (req, res) => 
 
 // Rota para receber pedidos do MentorWeb (ClienteApp envia para seu ERP)
 app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) => {
-  if (!req.isClienteSync) return res.status(403).json({ error: 'Acesso negado.' });
+  if (!req.isClienteSync) {
+    return res.status(403).json({ error: 'Acesso negado.' });
+  }
   const connection = await req.pool.getConnection();
   try {
-    await connection.beginTransaction();
-    const { pedidos } = req.body;
-    const processedOrders = [];
+    const { pedidos } = req.body; // Espera um array de pedidos
+
+    if (!pedidos || !Array.isArray(pedidos) || pedidos.length === 0) {
+      return res.status(400).json({ success: false, error: 'Dados de pedidos inválidos.' });
+    }
+
+    const insertedPedidos = [];
+
     for (const pedido of pedidos) {
-      // Inserção na tb_pedidos (lowercase)
-      // Usando colunas 'data', 'hora', 'id_cliente', 'id_forma_pagamento', 'id_local_retirada', 'total_produtos', 'status'
-      const [pedidoResult] = await connection.execute(
+      // Inserir o pedido principal na tb_pedidos
+      const [resultPedido] = await connection.execute(
         'INSERT INTO tb_pedidos (data, hora, id_cliente, id_forma_pagamento, id_local_retirada, total_produtos, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
         [
-          pedido.data, // YYYY-MM-DD
-          pedido.hora, // HH:MM:SS
+          pedido.data,
+          pedido.hora,
           pedido.id_cliente,
           pedido.id_forma_pagamento,
-          pedido.id_local_retirada,
+          pedido.id_local_retirada || null, // ESTA É A LINHA CRÍTICA QUE FOI ALTERADA
           pedido.total_produtos,
-          pedido.status // 'pendente' ou outro status vindo do frontend
+          'recebido' // Status inicial
         ]
       );
-      const pedidoCodigo = pedidoResult.insertId; // O ID inserido é o "codigo" da tb_pedidos
+      const idPedido = resultPedido.insertId;
 
-      // Inserção dos itens na tb_pedidos_produtos (lowercase)
-      // Usando colunas 'id_pedido_erp', 'id_produto', 'quantidade', 'unitario', 'total_produto', 'id_lcto_erp' (como NULL)
+      // Inserir os itens do pedido na tb_pedidos_produtos
       for (const item of pedido.itens) {
         await connection.execute(
           'INSERT INTO tb_pedidos_produtos (id_pedido_erp, id_produto, quantidade, unitario, total_produto, id_lcto_erp) VALUES (?, ?, ?, ?, ?, ?)',
           [
-            pedidoCodigo, // id_pedido_erp se refere ao 'codigo' do pedido principal
+            idPedido,
             item.id_produto,
             item.quantidade,
             item.unitario,
             item.total_produto,
-            null // id_lcto_erp do item é NULL inicialmente
+            null // id_lcto_erp é NULL por padrão, conforme seu schema
           ]
         );
       }
-      processedOrders.push({ id_original: pedido.id, id_lcto_erp: pedidoCodigo, status: 'sucesso' });
+      insertedPedidos.push({ id_pedido_mentorweb: pedido.id_pedido_mentorweb, id_pedido_erp: idPedido });
     }
-    await connection.commit();
-    res.json({ success: true, pedidos_inseridos: processedOrders, message: `${processedOrders.length} pedidos processados.` });
+
+    res.json({ success: true, pedidos_inseridos: insertedPedidos });
   } catch (error) {
-    await connection.rollback();
     console.error('Erro ao receber pedidos (cliente):', error);
-    res.status(500).json({ success: false, error: 'Erro ao processar pedidos.', details: error.message });
+    res.status(500).json({ success: false, error: 'Erro ao receber pedidos.', details: error.message });
   } finally {
     connection.release();
   }
