@@ -225,7 +225,7 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
 
     for (const pedido of pedidos) {
       const [resultPedido] = await connection.execute(
-        'INSERT INTO tb_pedidos (data, hora, id_cliente, id_forma_pagamento, id_local_retirada, total_produtos, id_pedido_mentorweb) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO tb_pedidos (data, hora, id_cliente, id_forma_pagamento, id_local_retirada, total_produtos, id_lcto_erp) VALUES (?, ?, ?, ?, ?, ?, ?)',
         [
           pedido.data,
           pedido.hora,
