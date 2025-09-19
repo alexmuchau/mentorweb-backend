@@ -335,7 +335,8 @@ app.post('/api/sync/authenticate-fornecedor-user', authenticateEnvironment, asyn
 
     // Consulta na tb_Ambientes
     const [rows] = await connection.execute(
-      'SELECT ID_Pessoa, Documento, Nome, usuario, Senha, Ativo FROM tb_Ambientes WHERE Documento = ? AND usuario = ? AND Senha = ?',
+      // CORREÇÃO AQUI: Traduzir 1/0 para S/N
+      'SELECT ID_Pessoa, Documento, Nome, usuario, Senha, CASE WHEN Ativo = \'1\' THEN \'S\' ELSE \'N\' END AS Ativo FROM tb_Ambientes WHERE Documento = ? AND usuario = ? AND Senha = ?',
       [cnpj_cpf, usuario, senha]
     );
 
@@ -345,7 +346,7 @@ app.post('/api/sync/authenticate-fornecedor-user', authenticateEnvironment, asyn
 
     const userData = rows[0];
 
-    // Verificar se o usuário está ativo
+    // Verificar se o usuário está ativo - AGORA VERIFICA 'S' (que virá do banco)
     if (userData.Ativo !== 'S') {
         return res.status(401).json({ success: false, error: 'Usuário inativo.' });
     }
