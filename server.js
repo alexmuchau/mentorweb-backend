@@ -482,6 +482,61 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
   }
 });
 
+// Rota para enviar produtos do ERP para o MentorWeb (ClienteApp)
+app.get('/api/sync/send-produtos', authenticateEnvironment, async (req, res) => {
+  if (!req.isClientAppAuth) {
+    return res.status(403).json({ 
+      error: 'Acesso negado', 
+      details: 'Esta rota é exclusiva para autenticação de cliente.' 
+    });
+  }
+
+  const connection = await req.pool.getConnection();
+  try {
+    console.log('Buscando produtos para cliente...');
+    
+    // Buscar produtos ativos - ajuste conforme sua estrutura de tabelas
+    const [rows] = await connection.execute(
+      `SELECT 
+        codigo as codigo,
+        produto as produto,
+        codigo_barras,
+        preco_venda,
+        estoque,
+        ativo
+      FROM tb_Produtos 
+      WHERE ativo = 'S'
+      ORDER BY produto`
+    );
+
+    console.log(`Encontrados ${rows.length} produtos.`);
+
+    const produtos = rows.map(row => ({
+      codigo: row.codigo,
+      produto: row.produto,
+      codigo_barras: row.codigo_barras || '',
+      preco_venda: parseFloat(row.preco_venda) || 0,
+      estoque: parseInt(row.estoque) || 0,
+      ativo: row.ativo
+    }));
+
+    res.json({
+      success: true,
+      produtos: produtos,
+      total: produtos.length
+    });
+
+  } catch (error) {
+    console.error('Erro ao buscar produtos:', error);
+    res.status(500).json({ 
+      error: 'Erro interno do servidor', 
+      details: error.message 
+    });
+  } finally {
+    connection.release();
+  }
+});
+
 // Inicia o servidor
 app.listen(PORT, () => {
   console.log(`Servidor de sincronização ERP rodando na porta ${PORT}`);
