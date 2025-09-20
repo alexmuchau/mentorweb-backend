@@ -84,11 +84,12 @@ async function getDatabasePool(databaseName) {
     // Em caso de erro na conexão inicial, remova o pool para que uma nova tentativa possa ser feita
     delete dbPools[databaseName];
     throw new Error(`Não foi possível conectar ao banco de dados ${databaseName}.`);
-};
+  }
 
   // Armazene e retorne o novo pool
   dbPools[databaseName] = newPool;
   return newPool;
+}
 
 // Middleware de autenticação de ambiente
 const authenticateEnvironment = async (req, res, next) => {
