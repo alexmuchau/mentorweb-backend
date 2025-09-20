@@ -109,10 +109,17 @@ const authenticateEnvironment = async (req, res, next) => {
 
     // CASO 1: Autenticação para Fornecedor (credenciais de sistema)
     if (usuario === SUPPLIER_SYNC_USER && senha === SUPPLIER_SYNC_PASS) {
-      req.isSupplierAuth = true;
-      req.environment = { cnpj, usuario, tipo: 'fornecedor_sync' };
-      console.log('Ambiente autenticado como Fornecedor Sync.');
-      return next();
+        req.isSupplierAuth = true;
+        // Para o fornecedor, precisamos encontrar o ambiente pelo CNPJ dele nos headers
+        const [supplierEnvRows] = await req.pool.execute(
+            'SELECT Codigo FROM tb_Ambientes_Fornecedor WHERE Documento = ?',
+            [cnpj]
+        );
+        const supplierEnvId = supplierEnvRows.length > 0 ? supplierEnvRows[0].Codigo : null;
+        
+        req.environment = { cnpj, usuario, tipo: 'fornecedor_sync', Codigo: supplierEnvId };
+        console.log(`Ambiente autenticado como Fornecedor Sync. ID do Ambiente: ${supplierEnvId}`);
+        return next();
     }
     
     // CASO 2: Autenticação para ClienteApp (credenciais do ambiente do cliente)
@@ -347,22 +354,23 @@ app.post('/api/sync/receive-pedido-fornecedor', async (req, res) => {
     connection = await req.pool.getConnection();
     await connection.beginTransaction();
 
-    console.log(`Recebendo pedido para fornecedor do cliente: ${cliente}`);
+    console.log(`Recebendo pedido para fornecedor. Cliente de origem (informativo): ${cliente}`);
 
-    // Tenta encontrar o ID do ambiente do cliente que está fazendo o pedido
-    const [clienteRows] = await connection.execute('SELECT Codigo FROM tb_Ambientes_Fornecedor WHERE Nome = ?', [cliente]);
-    const idAmbienteCliente = clienteRows.length > 0 ? clienteRows[0].Codigo : null;
-    
-    if (!idAmbienteCliente) {
-      throw new Error(`Cliente/Ambiente '${cliente}' não encontrado no banco de dados do fornecedor.`);
+    // CORREÇÃO: Usar o ID do ambiente do *próprio usuário autenticado*, não buscar pelo nome do cliente.
+    // O `req.environment.Codigo` foi populado pelo middleware `authenticateEnvironment`.
+    const idAmbientePedido = req.environment.Codigo;
+
+    if (!idAmbientePedido) {
+      // Esta verificação de segurança garante que o ambiente foi autenticado corretamente.
+      throw new Error(`ID do ambiente do requisitante não encontrado. Falha na autenticação do ambiente.`);
     }
     
-    console.log(`ID do ambiente do cliente encontrado: ${idAmbienteCliente}`);
+    console.log(`ID do ambiente que está fazendo o pedido: ${idAmbientePedido}`);
 
     // AJUSTADO: Query para as colunas corretas de tb_Pedidos_Fornecedor
     const [result] = await connection.execute(
       'INSERT INTO tb_Pedidos_Fornecedor (data_hora_lancamento, id_ambiente, valor_total, status) VALUES (NOW(), ?, ?, ?)',
-      [idAmbienteCliente, total_pedido, 'recebido']
+      [idAmbientePedido, total_pedido, 'recebido']
     );
 
     const idPedidoFornecedor = result.insertId;
