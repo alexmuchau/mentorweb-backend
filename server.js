@@ -48,6 +48,48 @@ const pool = mysql.createPool({
   reconnect: true
 });
 
+// Objeto para armazenar pools de conexão específicos por banco de dados
+const dbPools = {};
+
+// Função para obter ou criar um pool de conexão para um banco de dados específico
+async function getDatabasePool(databaseName) {
+  if (!databaseName) {
+    throw new Error('Nome do banco de dados não fornecido.');
+  }
+
+  // Se o pool para este banco de dados já existe, retorne-o
+  if (dbPools[databaseName]) {
+    return dbPools[databaseName];
+  }
+
+  // Crie um novo pool de conexão para o banco de dados específico
+  const newPool = mysql.createPool({
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: databaseName, // O banco de dados padrão para este pool
+    waitForConnections: true,
+    connectionLimit: 10, // Ajuste conforme necessário
+    queueLimit: 0
+  });
+
+  // Testar a conexão
+  try {
+    const connection = await newPool.getConnection();
+    await connection.query('SELECT 1'); // Testa a conexão com uma query simples
+    connection.release();
+    console.log(`Pool de conexão criado e testado para o banco de dados: ${databaseName}`);
+  } catch (error) {
+    console.error(`Erro ao criar ou testar pool para o banco de dados ${databaseName}:`, error);
+    // Em caso de erro na conexão inicial, remova o pool para que uma nova tentativa possa ser feita
+    delete dbPools[databaseName];
+    throw new Error(`Não foi possível conectar ao banco de dados ${databaseName}.`);
+  }
+
+  // Armazene e retorne o novo pool
+  dbPools[databaseName] = newPool;
+  return newPool;
+
 // Middleware de autenticação de ambiente
 const authenticateEnvironment = async (req, res, next) => {
   const cnpj = req.headers.cnpj;
