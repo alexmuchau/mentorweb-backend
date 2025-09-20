@@ -191,7 +191,7 @@ app.use('/api/sync', (req, res, next) => {
 // Rota para envio de produtos
 app.get('/api/sync/send-produtos', async (req, res) => {
   try {
-    const [rows] = await pool.execute('SELECT * FROM tb_produto WHERE ativo = "S"');
+    const [rows] = await pool.execute('SELECT * FROM tb_produtos WHERE ativo = "S"');
     res.json({ 
       success: true, 
       produtos: rows,
@@ -275,7 +275,7 @@ app.post('/api/sync/receive-pedidos', async (req, res) => {
     for (const pedido of pedidos) {
       try {
         const [result] = await pool.execute(
-          'INSERT INTO tb_pedido (data, hora, id_cliente, id_forma_pagamento, id_local_retirada, total_produtos, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
+          'INSERT INTO tb_pedidos (data, hora, id_cliente, id_forma_pagamento, id_local_retirada, total_produtos, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
           [pedido.data, pedido.hora, pedido.id_cliente, pedido.id_forma_pagamento, pedido.id_local_retirada, pedido.total_produtos, 'processando']
         );
         
@@ -283,7 +283,7 @@ app.post('/api/sync/receive-pedidos', async (req, res) => {
         
         for (const item of pedido.itens || []) {
           await pool.execute(
-            'INSERT INTO tb_pedido_produto (id_pedido, id_produto, quantidade, unitario, total_produto) VALUES (?, ?, ?, ?, ?)',
+            'INSERT INTO tb_pedidos_produtos (id_pedido, id_produto, quantidade, unitario, total_produto) VALUES (?, ?, ?, ?, ?)',
             [pedidoId, item.id_produto, item.quantidade, item.unitario, item.total_produto]
           );
         }
@@ -328,8 +328,8 @@ app.get('/api/sync/send-produtos-fornecedor', async (req, res) => {
       });
     }
 
-    // IMPORTANTE: Para fornecedor, usa tb_Produto (com P maiúsculo)
-    const [rows] = await pool.execute('SELECT * FROM tb_Produto WHERE Ativo = "S"');
+    // IMPORTANTE: Para fornecedor, usa tb_Produtos (com P maiúsculo)
+    const [rows] = await pool.execute('SELECT * FROM tb_Produtos WHERE Ativo = "S"');
     res.json({ 
       success: true, 
       produtos: rows,
@@ -361,9 +361,9 @@ app.post('/api/sync/receive-pedido-fornecedor', async (req, res) => {
       });
     }
 
-    // IMPORTANTE: Para fornecedor, usa tb_Pedido (com P maiúsculo)
+    // IMPORTANTE: Para fornecedor, usa tb_Pedidos (com P maiúsculo)
     const [result] = await pool.execute(
-      'INSERT INTO tb_Pedido (Cliente, Data_Pedido, Total_Pedido, Status) VALUES (?, NOW(), ?, ?)',
+      'INSERT INTO tb_Pedidos (Cliente, Data_Pedido, Total_Pedido, Status) VALUES (?, NOW(), ?, ?)',
       [cliente, total_pedido, 'Novo']
     );
     
@@ -371,7 +371,7 @@ app.post('/api/sync/receive-pedido-fornecedor', async (req, res) => {
     
     for (const item of itens) {
       await pool.execute(
-        'INSERT INTO tb_PedidoProduto (ID_Pedido, ID_Produto, Quantidade, Valor_Unitario, Total_Produto) VALUES (?, ?, ?, ?, ?)',
+        'INSERT INTO tb_Pedidos_Produtos (ID_Pedido, ID_Produto, Quantidade, Valor_Unitario, Total_Produto) VALUES (?, ?, ?, ?, ?)',
         [pedidoId, item.id_produto, item.quantidade, item.valor_unitario, item.total_produto]
       );
     }
