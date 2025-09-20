@@ -403,6 +403,60 @@ app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
 app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'ok', message: 'ERP Sync server is running.' });
 });
+// Rota para enviar produtos do fornecedor para o MentorWeb
+app.get('/api/sync/send-produtos-fornecedor', authenticateEnvironment, async (req, res) => {
+  if (!req.isSupplierAuth) {
+    return res.status(403).json({ 
+      error: 'Acesso negado', 
+      details: 'Esta rota é exclusiva para autenticação de fornecedor.' 
+    });
+  }
+
+  const connection = await req.pool.getConnection();
+  try {
+    console.log('Buscando produtos do fornecedor...');
+    
+    // Buscar produtos ativos do fornecedor
+    // Ajuste a query conforme sua estrutura de tabelas
+    const [rows] = await connection.execute(
+      `SELECT 
+        id as id,
+        produto as nome,
+        codigo_barras,
+        preco_venda as preco_unitario,
+        estoque
+      FROM tb_Produtos 
+      WHERE ativo = 'S'
+      ORDER BY produto`
+    );
+
+    console.log(`Encontrados ${rows.length} produtos do fornecedor.`);
+
+    const produtos = rows.map(row => ({
+      id: row.id,
+      nome: row.nome,
+      codigo_barras: row.codigo_barras || '',
+      preco_unitario: parseFloat(row.preco_unitario) || 0,
+      estoque: parseInt(row.estoque) || 0
+    }));
+
+    res.json({
+      success: true,
+      produtos: produtos,
+      total: produtos.length
+    });
+
+  } catch (error) {
+    console.error('Erro ao buscar produtos do fornecedor:', error);
+    res.status(500).json({ 
+      error: 'Erro interno do servidor', 
+      details: error.message 
+    });
+  } finally {
+    connection.release();
+  }
+});
+
 
 // Iniciar o servidor
 app.listen(PORT, () => {
