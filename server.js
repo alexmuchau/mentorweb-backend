@@ -117,7 +117,7 @@ const authenticateEnvironment = async (req, res, next) => {
     // CASO 1: Autenticação para ClienteApp (via headers cnpj, usuario, senha, banco_dados)
     // Para clientes, assumimos que o CNPJ no DB está limpo (sem formatação)
     const [clientRows] = await req.pool.execute(
-      'SELECT Codigo as Codigo, Nome as Nome, Senha as Senha, Ativo as Ativo FROM tb_Ambientes WHERE Documento = ? AND usuario = ? AND Senha = ? AND Ativo = "S"',
+      'SELECT Codigo as Codigo, Nome as Nome, Senha as Senha, Ativo as Ativo FROM tb_Ambientes_Fornecedor WHERE Documento = ? AND usuario = ? AND Senha = ? AND Ativo = "S"',
       [cnpj_cleaned, usuario, senha]
     );
 
