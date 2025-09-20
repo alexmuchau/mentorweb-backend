@@ -209,7 +209,7 @@ app.get('/api/sync/send-produtos', async (req, res) => {
 // Rota para envio de clientes
 app.get('/api/sync/send-clientes', async (req, res) => {
   try {
-    const [rows] = await pool.execute('SELECT * FROM tb_cliente WHERE ativo = "S"');
+    const [rows] = await pool.execute('SELECT * FROM tb_clientes WHERE ativo = "S"');
     res.json({ 
       success: true, 
       clientes: rows,
@@ -245,7 +245,7 @@ app.get('/api/sync/send-formas-pagamento', async (req, res) => {
 // Rota para envio de comandas
 app.get('/api/sync/send-comandas', async (req, res) => {
   try {
-    const [rows] = await pool.execute('SELECT * FROM tb_comanda WHERE ativo = "S"');
+    const [rows] = await pool.execute('SELECT * FROM tb_comandas WHERE ativo = "S"');
     res.json({ 
       success: true, 
       comandas: rows,
