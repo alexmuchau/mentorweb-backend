@@ -143,8 +143,11 @@ app.get('/api/health', (req, res) => {
 // As rotas que usam authenticateEnvironment passarão pelo middleware
 // e terão acesso a req.pool e req.environment
 
-// Exemplo de rota que buscaria produtos (usando o pool já autenticado)
+// Rotas para muchaucom_mentor (cliente) - Nomes de tabelas originais
 app.get('/api/sync/send-produtos', authenticateEnvironment, async (req, res) => {
+  if (req.environment.banco_dados !== 'muchaucom_mentor') {
+      return res.status(403).json({ success: false, error: 'Acesso negado. Esta rota é apenas para o banco muchaucom_mentor.' });
+  }
   try {
     const [rows] = await req.pool.execute('SELECT codigo, produto, codigo_barras, preco_venda, estoque, ativo FROM tb_produtos WHERE ativo = "S"');
     res.json({ success: true, produtos: rows });
@@ -154,8 +157,10 @@ app.get('/api/sync/send-produtos', authenticateEnvironment, async (req, res) => 
   }
 });
 
-// Exemplo de rota que buscaria clientes (usando o pool já autenticado)
 app.get('/api/sync/send-clientes', authenticateEnvironment, async (req, res) => {
+    if (req.environment.banco_dados !== 'muchaucom_mentor') {
+        return res.status(403).json({ success: false, error: 'Acesso negado. Esta rota é apenas para o banco muchaucom_mentor.' });
+    }
     try {
         const [rows] = await req.pool.execute('SELECT codigo, nome, cnpj, cpf, ativo FROM tb_clientes WHERE ativo = "S"');
         res.json({ success: true, clientes: rows });
@@ -165,8 +170,10 @@ app.get('/api/sync/send-clientes', authenticateEnvironment, async (req, res) => 
     }
 });
 
-// Exemplo de rota que buscaria formas de pagamento (usando o pool já autenticado)
 app.get('/api/sync/send-formas-pagamento', authenticateEnvironment, async (req, res) => {
+    if (req.environment.banco_dados !== 'muchaucom_mentor') {
+        return res.status(403).json({ success: false, error: 'Acesso negado. Esta rota é apenas para o banco muchaucom_mentor.' });
+    }
     try {
         const [rows] = await req.pool.execute('SELECT codigo, forma_pagamento, ativo FROM tb_formas_pagamento WHERE ativo = "S"');
         res.json({ success: true, formas: rows });
@@ -176,8 +183,10 @@ app.get('/api/sync/send-formas-pagamento', authenticateEnvironment, async (req, 
     }
 });
 
-// Exemplo de rota que buscaria comandas (usando o pool já autenticado)
 app.get('/api/sync/send-comandas', authenticateEnvironment, async (req, res) => {
+    if (req.environment.banco_dados !== 'muchaucom_mentor') {
+        return res.status(403).json({ success: false, error: 'Acesso negado. Esta rota é apenas para o banco muchaucom_mentor.' });
+    }
     try {
         const [rows] = await req.pool.execute('SELECT codigo, comanda, ativo FROM tb_comandas WHERE ativo = "S"');
         res.json({ success: true, comandas: rows });
@@ -187,10 +196,13 @@ app.get('/api/sync/send-comandas', authenticateEnvironment, async (req, res) => 
     }
 });
 
-// Exemplo de rota para receber pedidos de venda (usando o pool já autenticado)
 app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) => {
+    if (req.environment.banco_dados !== 'muchaucom_mentor') {
+        return res.status(403).json({ success: false, error: 'Acesso negado. Esta rota é apenas para o banco muchaucom_mentor.' });
+    }
+
     const { pedidos } = req.body;
-    let connection; // Declare connection here
+    let connection;
 
     if (!pedidos || !Array.isArray(pedidos) || pedidos.length === 0) {
         return res.status(400).json({ success: false, error: 'Dados de pedidos inválidos.' });
@@ -203,24 +215,29 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
         const pedidos_inseridos = [];
 
         for (const pedido of pedidos) {
-            // Mapeamento para tb_Pedidos (ajuste conforme a sua estrutura real)
+            // Inserir na tabela tb_pedidos
             const [pedidoResult] = await connection.execute(
-                `INSERT INTO tb_Pedidos (data_hora_lancamento, valor_total, status, id_pedido_sistema_externo)
-                 VALUES (?, ?, ?, ?)`,
+                `INSERT INTO tb_pedidos (data, hora, id_cliente, id_forma_pagamento, id_local_retirada, total_produtos, status, id_pedido_sistema_externo, origem)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [
-                    new Date(pedido.data + 'T' + pedido.hora), // Combine data e hora se necessário
+                    pedido.data,
+                    pedido.hora,
+                    pedido.id_cliente,
+                    pedido.id_forma_pagamento,
+                    pedido.id_local_retirada,
                     pedido.total_produtos,
-                    'processando', // Status padrão para novos pedidos
-                    pedido.id_pedido_mentorweb // ID do MentorWeb para rastreamento
+                    pedido.status,
+                    pedido.id_pedido_mentorweb, // Usando id_pedido_mentorweb para id_pedido_sistema_externo
+                    'mentorweb' // Valor fixo para origem
                 ]
             );
 
             const id_pedido_inserido = pedidoResult.insertId;
 
-            // Inserir itens do pedido em tb_Pedidos_Produtos
+            // Inserir itens do pedido em tb_pedidos_produtos
             for (const item of pedido.itens) {
                 await connection.execute(
-                    `INSERT INTO tb_Pedidos_Produtos (id_pedido, id_produto, quantidade, preco_unitario, valor_total)
+                    `INSERT INTO tb_pedidos_produtos (id_pedido_erp, id_produto, quantidade, unitario, total_produto)
                      VALUES (?, ?, ?, ?, ?)`,
                     [
                         id_pedido_inserido,
@@ -247,25 +264,24 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
 });
 
 
+// Rotas para muchaucom_pisciNew (fornecedor) - Nomes de tabelas ajustados
+
 // ROTA PARA FORNECEDORES: Buscar produtos para o aplicativo de fornecedores
 app.get('/api/sync/send-produtos-fornecedor', authenticateEnvironment, async (req, res) => {
-    // Esta rota espera as credenciais do MentorWeb para o FORNECEDOR nos headers,
-    // e o `banco_dados` no header deve ser 'muchaucom_pisciNew'.
-    // A query deve ser ajustada para a tabela tb_Produtos_Fornecedor
-    if (req.environment.tipo !== 'fornecedor_sync') { // req.isSupplierAuth já é coberto aqui.
+    if (req.environment.banco_dados !== 'muchaucom_pisciNew') {
+        return res.status(403).json({ success: false, error: 'Acesso negado. Esta rota é apenas para o banco muchaucom_pisciNew.' });
+    }
+    if (req.environment.tipo !== 'fornecedor_sync') {
         return res.status(403).json({ success: false, error: 'Acesso negado. Apenas usuários de sincronização de fornecedor podem acessar esta rota.' });
     }
 
     try {
-        // Ajustado para tb_Produtos_Fornecedor e suas colunas
         const [rows] = await req.pool.execute('SELECT id, nome, preco_unitario, Ativo FROM tb_Produtos_Fornecedor WHERE Ativo = "S"'); 
-        // Mapear 'Ativo' para 'ativo' (minúsculo) se o frontend espera assim
         const produtosFormatados = rows.map(p => ({
             id: p.id,
-            produto: p.nome, // Renomear 'nome' para 'produto' para consistência no frontend
-            preco_venda: p.preco_unitario, // Renomear 'preco_unitario' para 'preco_venda'
-            ativo: p.Ativo // Manter 'ativo'
-            // id, codigo_barras e estoque não existem nesta tabela
+            produto: p.nome,
+            preco_venda: p.preco_unitario,
+            ativo: p.Ativo
         }));
 
         res.json({ success: true, produtos: produtosFormatados });
@@ -277,16 +293,15 @@ app.get('/api/sync/send-produtos-fornecedor', authenticateEnvironment, async (re
 
 // ROTA PARA FORNECEDORES: Receber pedidos do aplicativo de fornecedores
 app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (req, res) => {
-    // Esta rota espera as credenciais do MentorWeb para o FORNECEDOR nos headers,
-    // e o BODY da requisição contém os dados do pedido (produtos, total, etc.)
-    // E o `cliente_nome_mw` para saber quem fez o pedido.
-    // As inserções agora usarão tb_Pedidos_Fornecedor e tb_Pedidos_Produtos_Fornecedor
-    if (req.environment.tipo !== 'fornecedor_sync') { // req.isSupplierAuth já é coberto aqui.
+    if (req.environment.banco_dados !== 'muchaucom_pisciNew') {
+        return res.status(403).json({ success: false, error: 'Acesso negado. Esta rota é apenas para o banco muchaucom_pisciNew.' });
+    }
+    if (req.environment.tipo !== 'fornecedor_sync') {
         return res.status(403).json({ success: false, error: 'Acesso negado. Apenas usuários de sincronização de fornecedor podem acessar esta rota.' });
     }
 
-    const { produtos, total_pedido, data_pedido, cliente } = req.body; // 'cliente' é o nome do remetente (ClienteApp ou UsuarioFornecedorApp)
-    let connection; // Declare connection here
+    const { produtos, total_pedido, data_pedido, cliente } = req.body;
+    let connection;
 
     if (!produtos || !Array.isArray(produtos) || produtos.length === 0 || !total_pedido || !data_pedido || !cliente) {
         return res.status(400).json({ success: false, error: 'Dados de pedido de fornecedor incompletos ou inválidos.' });
@@ -296,36 +311,39 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
         connection = await req.pool.getConnection();
         await connection.beginTransaction();
 
-        // Inserir na tabela principal de pedidos (tb_Pedidos_Fornecedor)
-        // Mapeamento conforme sua nova estrutura tb_Pedidos_Fornecedor
+        // Inserir na tabela tb_Pedidos_Fornecedor
         const [pedidoResult] = await connection.execute(
             `INSERT INTO tb_Pedidos_Fornecedor (data_hora_lancamento, valor_total, status, id_pedido_sistema_externo, id_ambiente)
              VALUES (?, ?, ?, ?, ?)`,
             [
-                data_pedido, // A data já vem formatada
+                data_pedido,
                 total_pedido,
-                'processando', // Status padrão para novos pedidos
-                cliente,      // Usando o nome do cliente/fornecedor do MentorWeb como identificador externo
-                // id_ambiente: Este campo é 'id_ambiente' na sua tb_Pedidos_Fornecedor.
-                // Como não vem do MentorWeb no corpo, e não está no header do authenticateEnvironment,
-                // você precisará definir como irá preenchê-lo.
-                // Sugestão: Se cada FornecedorApp tem um único ambiente, pode ser fixo ou mapeado.
-                // Por agora, estou usando um valor fixo de exemplo. AJUSTE ISSO!
-                100 // EX: Um ID de ambiente fixo. AJUSTE ISSO CONFORME SEU NEGÓCIO!
+                'processando',
+                cliente,
+                // id_ambiente: Usar o Codigo da tb_Ambientes_Fornecedor que representa o ambiente.
+                // Como este endpoint é chamado pelo MentorWeb com as credenciais do fornecedor_sync,
+                // e não há um campo 'id_ambiente' no payload atual do `send_pedido_fornecedor` do MentorWeb,
+                // você precisará determinar como este valor será fornecido.
+                // Sugestão: Se cada fornecedor_app tem um único ambiente, você pode buscar essa informação
+                // usando o CNPJ/usuario nos headers para encontrar o ambiente associado.
+                // Por agora, estou usando um valor fixo de exemplo (ID do ambiente do fornecedor).
+                // VOCÊ DEVE AJUSTAR ESTE VALOR PARA O ID DO AMBIENTE REAL NO SEU ERP!
+                // Exemplo: 299, 399, etc. conforme tb_Ambientes_Fornecedor
+                // Usarei 299 como placeholder, mas você deve obter isso dinamicamente se houver múltiplos ambientes por CNPJ
+                299 
             ]
         );
 
-        const id_pedido_inserido = pedidoResult.insertId; // Obtém o ID do pedido recém-inserido
+        const id_pedido_inserido = pedidoResult.insertId;
 
-        // Inserir os itens do pedido na tabela (tb_Pedidos_Produtos_Fornecedor)
-        // Mapeamento conforme sua nova estrutura tb_Pedidos_Produtos_Fornecedor
+        // Inserir os itens do pedido na tabela tb_Pedidos_Produtos_Fornecedor
         for (const item of produtos) {
             await connection.execute(
                 `INSERT INTO tb_Pedidos_Produtos_Fornecedor (id_pedido, id_produto, quantidade, preco_unitario, valor_total)
                  VALUES (?, ?, ?, ?, ?)`,
                 [
                     id_pedido_inserido,
-                    item.id_produto, // ID do produto no sistema do FORNECEDOR
+                    item.id_produto,
                     item.quantidade,
                     item.valor_unitario,
                     item.total_produto
@@ -348,35 +366,35 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
 
 // ROTA ESPECIAL: Autenticação de usuário fornecedor para login (não usa authenticateEnvironment para pegar pool)
 app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
-  const { cnpj_cpf, usuario, senha } = req.body; // Credenciais do USUÁRIO FINAL
-  const { banco_dados, cnpj, usuario: ambiente_usuario, senha: ambiente_senha } = req.headers; // Credenciais do AMBIENTE
+  const { cnpj_cpf, usuario, senha } = req.body;
+  const { banco_dados, cnpj: header_cnpj_empresa, usuario: header_usuario_empresa, senha: header_senha_empresa } = req.headers;
   
-  let connection; // Declare connection here
+  let connection;
 
   console.log('--- AUTENTICAÇÃO DE USUÁRIO FORNECEDOR ---');
   console.log('Body (usuário final):', { cnpj_cpf, usuario, senha });
-  console.log('Headers (ambiente):', { banco_dados, cnpj, ambiente_usuario, ambiente_senha });
+  console.log('Headers (ambiente de sync):', { banco_dados, header_cnpj_empresa, header_usuario_empresa, header_senha_empresa });
   console.log('-----------------------------------------');
 
   // Validações básicas
-  if (!banco_dados || !cnpj || !ambiente_usuario || !ambiente_senha) {
+  if (!banco_dados || !header_cnpj_empresa || !header_usuario_empresa || !header_senha_empresa) {
     return res.status(400).json({ error: 'Credenciais de ambiente incompletas nos headers.' });
   }
   if (!cnpj_cpf || !usuario || !senha) {
     return res.status(400).json({ error: 'Credenciais de usuário final incompletas no body.' });
   }
 
-  // NOVO: Autentica as credenciais do ambiente nos headers
-  if (ambiente_usuario !== SUPPLIER_SYNC_USER || ambiente_senha !== SUPPLIER_SYNC_PASS) {
+  // Autentica as credenciais de sincronização de fornecedor nos headers
+  if (header_usuario_empresa !== SUPPLIER_SYNC_USER || header_senha_empresa !== SUPPLIER_SYNC_PASS) {
       return res.status(401).json({ error: 'Credenciais de sincronização de fornecedor inválidas nos headers.' });
   }
 
   try {
     const pool = await getDatabasePool(banco_dados); 
-    connection = await pool.getConnection(); // Assign to the declared connection
+    connection = await pool.getConnection();
 
-    // REALIZA A AUTENTICAÇÃO DO USUÁRIO FINAL NA TABELA DO SEU BANCO DE DADOS
-    // A consulta agora é na tb_Ambientes_Fornecedor, que contém os dados de usuário e ambiente.
+    // A consulta agora é na tb_Ambientes_Fornecedor para autenticar o usuário final
+    // e pegar os dados do ambiente (Codigo e Nome)
     const [rows] = await connection.execute(
         `SELECT
             ID_Pessoa, Documento, Nome AS NomePessoa, usuario, Ativo,
@@ -393,11 +411,11 @@ app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
             user: {
                 ID_Pessoa: user.ID_Pessoa,
                 Documento: user.Documento,
-                Nome: user.NomePessoa, // Usar NomePessoa aqui para o nome da pessoa/usuário
+                Nome: user.NomePessoa, // Nome da pessoa/usuário
                 usuario: user.usuario,
                 Ativo: user.Ativo,
-                id_ambiente_erp: user.id_ambiente_erp,
-                nome_ambiente: user.nome_ambiente
+                id_ambiente_erp: user.id_ambiente_erp, // Codigo da tb_Ambientes_Fornecedor
+                nome_ambiente: user.nome_ambiente // Nome da tb_Ambientes_Fornecedor
             }
         });
     } else {
@@ -409,7 +427,7 @@ app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
     res.status(500).json({ success: false, error: 'Erro interno no servidor.', details: error.message });
   } finally {
     if (connection) {
-      connection.release(); // Sempre libere a conexão
+      connection.release();
     }
   }
 });
