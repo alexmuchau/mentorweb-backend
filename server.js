@@ -332,7 +332,7 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
 
       for (const item of pedido.itens) {
         await pool.execute(
-          'INSERT INTO tb_itens_pedido (id_pedido, id_produto, quantidade, unitario, total_produto) VALUES (?, ?, ?, ?, ?)',
+          'INSERT INTO tb_pedidos_produtos (id_pedido_erp, id_produto, quantidade, unitario, total_produto) VALUES (?, ?, ?, ?, ?)',
           [pedidoId, item.id_produto, item.quantidade, item.unitario, item.total_produto]
         );
       }
