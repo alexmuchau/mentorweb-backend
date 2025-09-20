@@ -10,6 +10,9 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3333;
 
+const SUPPLIER_SYNC_USER = process.env.SUPPLIER_SYNC_USER || 'mentorweb_fornecedor';
+const SUPPLIER_SYNC_PASS = process.env.SUPPLIER_SYNC_PASS || 'mentorweb_sync_forn_2024';
+
 // Middlewares de segurança e performance
 app.use(helmet());
 app.use(compression());
@@ -47,73 +50,64 @@ const pool = mysql.createPool({
 
 // Middleware de autenticação de ambiente
 const authenticateEnvironment = async (req, res, next) => {
-  const { cnpj, usuario, senha, banco_dados } = req.headers;
+  const cnpj = req.headers.cnpj;
+  const usuario = req.headers.usuario;
+  const senha = req.headers.senha;
+  const banco_dados = req.headers.banco_dados;
 
-  console.log('--- HEADERS RECEBIDOS ---');
-  console.log('cnpj:', cnpj);
-  console.log('usuario:', usuario);
-  console.log('senha:', senha);
-  console.log('banco_dados:', banco_dados);
-  console.log('-------------------------');
+  req.isClientAppAuth = false;
+  req.isSupplierAuth = false;
+  req.environment = null; // Informações do ambiente autenticado
 
   if (!cnpj || !usuario || !senha || !banco_dados) {
-    return res.status(400).json({ 
-      error: 'Headers de autenticação obrigatórios: cnpj, usuario, senha, banco_dados' 
-    });
+    return res.status(400).json({ error: 'Credenciais de ambiente incompletas', details: 'Headers CNPJ, Usuário, Senha e Banco de Dados são obrigatórios.' });
   }
 
-  // CASO ESPECIAL: Autenticação de fornecedor (headers especiais)
-  if (cnpj === 'fornecedor_auth' && usuario === 'fornecedor_auth' && senha === 'fornecedor_auth') {
-    console.log('>>> AUTENTICAÇÃO DE FORNECEDOR DETECTADA <<<');
-    console.log('Usando banco de dados:', banco_dados);
-    
-    try {
-      await pool.query(`USE \`${banco_dados}\``);
-      console.log(`Conectado ao banco de dados do fornecedor: ${banco_dados}`);
-      req.isSupplierAuth = true;
-      return next();
-    } catch (error) {
-      console.error(`Erro ao conectar no banco do fornecedor ${banco_dados}:`, error);
-      return res.status(500).json({ 
-        error: 'Erro ao conectar com banco de dados do fornecedor',
-        details: error.message 
-      });
-    }
-  }
-
-  // CASO NORMAL: Autenticação de ClienteApp
   try {
-    console.log('>>> AUTENTICAÇÃO DE CLIENTE DETECTADA <<<');
-    console.log('Conectando ao banco:', banco_dados);
+    const pool = await getDatabasePool(banco_dados); // Obtém o pool de conexão para o banco de dados especificado
+    req.pool = pool; // Anexa o pool à requisição
+
+    // NOVO: Primeiro, tenta autenticar como usuário de sincronização de fornecedor (credenciais fixas)
+    // Isso é para chamadas internas de serviço (ex: buscar produtos de fornecedor)
+    if (usuario === SUPPLIER_SYNC_USER && senha === SUPPLIER_SYNC_PASS) {
+        req.isSupplierAuth = true;
+        req.environment = { cnpj, usuario, tipo: 'fornecedor_sync' };
+        return next(); // Autenticado como sincronização de fornecedor
+    }
     
-    await pool.query(`USE \`${banco_dados}\``);
-    
-    // IMPORTANTE: Para ClienteApp, usa tb_ambientes (minúsculas)
+    // NOVO/MODIFICADO: Lógica para login de fornecedor (autenticação de usuário individual na tb_Ambientes)
+    // Isso é para a tela de login do usuário fornecedor
+    if (cnpj === 'fornecedor_auth' && usuario === 'fornecedor_auth' && senha === 'fornecedor_auth') {
+        req.isSupplierAuth = true; // Marca que é uma requisição de autenticação de fornecedor
+        // O ambiente (pool) já foi obtido acima. req.pool já está definido.
+        req.environment = { cnpj, usuario, tipo: 'fornecedor_login' };
+        return next(); // Permite que a rota authenticate-fornecedor-user lide com a autenticação real
+    }
+
+    // MODIFICADO: Lógica para ClienteApp (autenticação de usuário individual na tb_ambientes)
+    // Se não for uma requisição de fornecedor_sync nem de fornecedor_login, tenta autenticar como ClienteApp
     const [rows] = await pool.execute(
       'SELECT * FROM tb_ambientes WHERE cnpj = ? AND usuario = ? AND senha = ? AND ativo = "S"',
       [cnpj, usuario, senha]
     );
 
-    if (rows.length === 0) {
-      return res.status(401).json({ 
-        error: 'Credenciais de ambiente inválidas',
-        details: `CNPJ: ${cnpj}, Usuário: ${usuario}` 
-      });
+    if (rows.length > 0) {
+      req.isClientAppAuth = true;
+      req.environment = { ...rows[0], tipo: 'cliente' };
+      return next();
     }
 
-    console.log(`Autenticação ClienteApp bem-sucedida para: ${cnpj}`);
-    req.environmentData = rows[0];
-    return next();
+    // Se nenhuma autenticação for bem-sucedida
+    return res.status(401).json({ error: 'Credenciais de ambiente inválidas', details: `CNPJ: ${cnpj}, Usuário: ${usuario}` });
 
   } catch (error) {
-    console.error('Erro na autenticação de ambiente:', error);
-    return res.status(500).json({ 
-      error: 'Erro interno na autenticação de ambiente',
-      details: error.message 
-    });
+    console.error(`Erro no middleware authenticateEnvironment para banco ${banco_dados}:`, error);
+    if (error.sqlMessage) {
+        return res.status(500).json({ error: 'Erro no banco de dados', details: error.sqlMessage });
+    }
+    return res.status(500).json({ error: 'Erro interno do servidor', details: error.message });
   }
 };
-
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
