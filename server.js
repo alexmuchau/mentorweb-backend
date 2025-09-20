@@ -299,7 +299,7 @@ app.post('/api/sync/receive-pedidos', async (req, res) => {
             console.log(`Processando pedido do app (ID MentorWeb: ${id_pedido_mentorweb}) para o cliente ${id_cliente}`);
 
             const [result] = await connection.execute(
-                'INSERT INTO tb_pedidos (data, hora, id_cliente, id_forma_pagamento, id_local_retirada, total_produtos, status, id_pedido_sistema_externo, origem, observacoes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                'INSERT INTO tb_pedidos (data, hora, id_cliente, id_forma_pagamento, id_local_retirada, total_produtos, status, id_lcto_erp, origem, observacoes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                 [data, hora, id_cliente, id_forma_pagamento, id_local_retirada || null, total_produtos, 'recebido', id_pedido_mentorweb, 'mentorweb', observacoes || null]
             );
 
