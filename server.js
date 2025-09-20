@@ -68,7 +68,7 @@ const authenticateEnvironment = async (req, res, next) => {
     console.log('Usando banco de dados:', banco_dados);
     
     try {
-      await pool.execute(`USE \`${banco_dados}\``);
+      await pool.query(`USE \`${banco_dados}\``);
       console.log(`Conectado ao banco de dados do fornecedor: ${banco_dados}`);
       req.isSupplierAuth = true;
       return next();
@@ -86,7 +86,7 @@ const authenticateEnvironment = async (req, res, next) => {
     console.log('>>> AUTENTICAÇÃO DE CLIENTE DETECTADA <<<');
     console.log('Conectando ao banco:', banco_dados);
     
-    await pool.execute(`USE \`${banco_dados}\``);
+    await pool.query(`USE \`${banco_dados}\``);
     
     // IMPORTANTE: Para ClienteApp, usa tb_ambientes (minúsculas)
     const [rows] = await pool.execute(
@@ -137,7 +137,7 @@ app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
 
   try {
     // Conectar no banco de dados do fornecedor
-    await pool.execute(`USE \`${banco_dados}\``);
+    await pool.query(`USE \`${banco_dados}\``);
     console.log(`Conectado ao banco do fornecedor: ${banco_dados}`);
 
     // IMPORTANTE: Para fornecedor, usa tb_Ambientes (com A maiúsculo)
