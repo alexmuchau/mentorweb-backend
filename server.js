@@ -227,7 +227,7 @@ app.get('/api/sync/send-clientes', async (req, res) => {
 // Rota para envio de formas de pagamento
 app.get('/api/sync/send-formas-pagamento', async (req, res) => {
   try {
-    const [rows] = await pool.execute('SELECT * FROM tb_forma_pagamento WHERE ativo = "S"');
+    const [rows] = await pool.execute('SELECT * FROM tb_formas_pagamento WHERE ativo = "S"');
     res.json({ 
       success: true, 
       formas: rows,
