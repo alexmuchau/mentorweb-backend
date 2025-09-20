@@ -110,10 +110,11 @@ const authenticateEnvironment = async (req, res, next) => {
     // CASO 1: Autenticação para Fornecedor (credenciais de sistema)
     if (usuario === SUPPLIER_SYNC_USER && senha === SUPPLIER_SYNC_PASS) {
         req.isSupplierAuth = true;
+        const cleanCnpj = cnpj.replace(/\D/g, '');
         // Para o fornecedor, precisamos encontrar o ambiente pelo CNPJ dele nos headers
         const [supplierEnvRows] = await req.pool.execute(
             'SELECT Codigo FROM tb_Ambientes_Fornecedor WHERE Documento = ?',
-            [cnpj]
+            [cleanCnpj]
         );
         const supplierEnvId = supplierEnvRows.length > 0 ? supplierEnvRows[0].Codigo : null;
         
@@ -175,13 +176,17 @@ app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
   try {
     const pool = await getDatabasePool(banco_dados);
     connection = await pool.getConnection();
+    
+    // --- CORREÇÃO APLICADA AQUI ---
+    // Remove a formatação do CNPJ/CPF antes de consultar o banco.
+    const clean_cnpj_cpf = cnpj_cpf.replace(/\D/g, '');
 
-    console.log(`Autenticando usuário fornecedor: ${usuario} para o documento: ${cnpj_cpf}`);
+    console.log(`Autenticando usuário fornecedor: ${usuario} para o documento (limpo): ${clean_cnpj_cpf}`);
 
-    // AJUSTADO: Query para a tabela e colunas corretas de ambiente de fornecedor
+    // Query para a tabela e colunas corretas de ambiente de fornecedor
     const [rows] = await connection.execute(
       `SELECT Codigo, ID_Pessoa, Documento, Nome, usuario, Ativo FROM tb_Ambientes_Fornecedor WHERE Documento = ? AND usuario = ? AND Senha = ? AND Ativo = 'S'`,
-      [cnpj_cpf, usuario, senha]
+      [clean_cnpj_cpf, usuario, senha] // Usa o documento limpo na query
     );
 
     if (rows.length > 0) {
@@ -190,8 +195,8 @@ app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
       return res.status(200).json({
         success: true,
         user: {
-          id_ambiente_erp: user.Codigo, // Mapeado de Codigo
-          nome_ambiente: user.Nome,    // Mapeado de Nome
+          id_ambiente_erp: user.Codigo,
+          nome_ambiente: user.Nome,
           ID_Pessoa: user.ID_Pessoa,
           Documento: user.Documento,
           Nome: user.Nome,
@@ -223,7 +228,6 @@ app.get('/api/sync/send-produtos', async (req, res) => {
         return res.status(403).json({ error: "Acesso não autorizado para esta rota." });
     }
     try {
-        // AJUSTADO: Query para as colunas corretas de tb_produtos
         const [rows] = await req.pool.query("SELECT codigo, produto, codigo_barras, preco_venda, estoque, ativo FROM tb_produtos WHERE ativo = 'S'");
         res.json({ success: true, produtos: rows, total: rows.length });
     } catch (error) {
@@ -289,7 +293,6 @@ app.post('/api/sync/receive-pedidos', async (req, res) => {
 
     console.log(`Recebendo pedido do app (ID: ${id_pedido_app}) para o cliente ${id_cliente}`);
 
-    // AJUSTADO: Query para as colunas corretas de tb_pedidos
     const [result] = await connection.execute(
       'INSERT INTO tb_pedidos (data, hora, id_cliente, id_forma_pagamento, id_local_retirada, total_produtos, status, id_pedido_sistema_externo, origem, observacoes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [data, hora, id_cliente, id_forma_pagamento, id_local_retirada || null, total_produtos, 'recebido', id_pedido_app, 'mentorweb', observacoes || null]
@@ -299,7 +302,6 @@ app.post('/api/sync/receive-pedidos', async (req, res) => {
     console.log(`Pedido inserido em tb_pedidos com ID: ${idPedidoErp}`);
 
     for (const item of itens) {
-      // AJUSTADO: Query para as colunas corretas de tb_pedidos_produtos
       await connection.execute(
         'INSERT INTO tb_pedidos_produtos (id_pedido_erp, id_produto, quantidade, unitario, total_produto) VALUES (?, ?, ?, ?, ?)',
         [idPedidoErp, item.id_produto, item.quantidade, item.unitario, item.total_produto]
@@ -328,7 +330,6 @@ app.get('/api/sync/send-produtos-fornecedor', async (req, res) => {
     }
     try {
         console.log("Buscando produtos do fornecedor...");
-        // AJUSTADO: Query para a tabela correta e com ALIASES para o frontend
         const [rows] = await req.pool.query("SELECT id, nome, preco_unitario, Ativo as ativo FROM tb_Produtos_Fornecedor WHERE Ativo = 'S'");
         console.log(`${rows.length} produtos de fornecedor encontrados.`);
         res.json({ success: true, produtos: rows, total: rows.length });
@@ -356,18 +357,14 @@ app.post('/api/sync/receive-pedido-fornecedor', async (req, res) => {
 
     console.log(`Recebendo pedido para fornecedor. Cliente de origem (informativo): ${cliente}`);
 
-    // CORREÇÃO: Usar o ID do ambiente do *próprio usuário autenticado*, não buscar pelo nome do cliente.
-    // O `req.environment.Codigo` foi populado pelo middleware `authenticateEnvironment`.
     const idAmbientePedido = req.environment.Codigo;
 
     if (!idAmbientePedido) {
-      // Esta verificação de segurança garante que o ambiente foi autenticado corretamente.
       throw new Error(`ID do ambiente do requisitante não encontrado. Falha na autenticação do ambiente.`);
     }
     
     console.log(`ID do ambiente que está fazendo o pedido: ${idAmbientePedido}`);
 
-    // AJUSTADO: Query para as colunas corretas de tb_Pedidos_Fornecedor
     const [result] = await connection.execute(
       'INSERT INTO tb_Pedidos_Fornecedor (data_hora_lancamento, id_ambiente, valor_total, status) VALUES (NOW(), ?, ?, ?)',
       [idAmbientePedido, total_pedido, 'recebido']
@@ -377,10 +374,9 @@ app.post('/api/sync/receive-pedido-fornecedor', async (req, res) => {
     console.log(`Pedido inserido em tb_Pedidos_Fornecedor com ID: ${idPedidoFornecedor}`);
 
     for (const item of produtos) {
-      // AJUSTADO: Query para as colunas corretas de tb_Pedidos_Produtos_Fornecedor
       await connection.execute(
         'INSERT INTO tb_Pedidos_Produtos_Fornecedor (id_pedido, id_produto, quantidade, preco_unitario, valor_total, identificador_cliente_item) VALUES (?, ?, ?, ?, ?, ?)',
-        [idPedidoFornecedor, item.id_produto, item.quantidade, item.valor_unitario, item.total_produto, item.id_produto] // Usando id_produto como identificador temporário
+        [idPedidoFornecedor, item.id_produto, item.quantidade, item.valor_unitario, item.total_produto, item.id_produto]
       );
     }
     console.log(`${produtos.length} itens inseridos em tb_Pedidos_Produtos_Fornecedor.`);
