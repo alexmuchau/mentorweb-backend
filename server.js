@@ -191,6 +191,23 @@ app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
     } else {
       res.status(401).json({ success: false, error: 'Credenciais inválidas' });
     }
+    const ambienteQuery = `
+            SELECT a.Codigo as id_ambiente_erp, a.nome as nome_ambiente 
+            FROM tb_Ambientes a 
+            WHERE a.ID_Pessoa = ? OR a.algum_campo_relacionado = ?
+        `;
+        
+        const [ambienteResult] = await connection.execute(ambienteQuery, [usuarioData.ID_Pessoa, usuarioData.algum_campo]);
+        
+        res.json({
+            success: true,
+            user: {
+                ...usuarioData, // seus dados existentes
+                // NOVO: Incluir dados do ambiente
+                id_ambiente_erp: ambienteResult?.id_ambiente_erp || null,
+                nome_ambiente: ambienteResult?.nome_ambiente || null
+            }
+        });
 
   } catch (error) {
     console.error('Erro na autenticação de usuário fornecedor:', error);
