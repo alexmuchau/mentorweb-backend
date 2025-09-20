@@ -107,303 +107,259 @@ const authenticateEnvironment = async (req, res, next) => {
     // Tenta obter o pool para o banco_dados.
     req.pool = await getDatabasePool(banco_dados); 
 
-    // CASO 1: Autenticação para Fornecedor (via headers 'usuario' e 'senha' específicos)
-    if (usuario === SUPPLIER_SYNC_USER && senha === SUPPLIER_SYNC_PASS) {
-      req.isSupplierAuth = true;
-      const connection = await req.pool.getConnection();
-      try {
-        const cleanedCnpj = cnpj.replace(/\D/g, ''); // Remover formatação
-        const [rows] = await connection.execute('SELECT Codigo, Documento, Nome FROM tb_Ambientes_Fornecedor WHERE Documento = ? AND Ativo = \'S\'', [cleanedCnpj]);
-        if (rows.length > 0) {
-          req.environment = rows[0]; // Armazena os dados do ambiente autenticado
-          console.log(`Ambiente autenticado como Fornecedor Sync para CNPJ: ${cnpj}`);
-          next();
-        } else {
-          return res.status(401).json({ success: false, error: 'Credenciais de sincronização de fornecedor inválidas (CNPJ não encontrado ou inativo).' });
-        }
-      } finally {
-        connection.release();
-      }
-    } 
-    // CASO 2: Autenticação para ClienteApp (via headers 'usuario', 'senha' e 'cnpj' do cliente)
-    else {
-      // Aqui, o 'cnpj' no header é o CNPJ do cliente/empresa do aplicativo
-      // O 'usuario' e 'senha' no header são as credenciais do usuário do ERP (não usuário do MentorWeb)
+    // Limpa o CNPJ para autenticação de ClienteApp, pois o BD armazena sem formatação para eles
+    // Apenas aplica se não for o usuário de sincronização do fornecedor, para evitar conflitos
+    let cnpj_cleaned = cnpj; // Assume que o CNPJ pode já vir limpo ou será limpo mais tarde
+    if (!(usuario === SUPPLIER_SYNC_USER && senha === SUPPLIER_SYNC_PASS)) {
+        cnpj_cleaned = cnpj.replace(/\D/g, ''); // Limpa o CNPJ apenas para usuários normais
+    }
+
+    // CASO 1: Autenticação para ClienteApp (via headers cnpj, usuario, senha, banco_dados)
+    // Para clientes, assumimos que o CNPJ no DB está limpo (sem formatação)
+    const [clientRows] = await req.pool.execute(
+      'SELECT Codigo as Codigo, Nome as Nome, Senha as Senha, Ativo as Ativo FROM tb_Ambientes WHERE Documento = ? AND usuario = ? AND Senha = ? AND Ativo = "S"',
+      [cnpj_cleaned, usuario, senha]
+    );
+
+    if (clientRows.length > 0) {
       req.isClientAppAuth = true;
-      const connection = await req.pool.getConnection();
-      try {
-        // Assume-se que 'usuario' e 'senha' nos headers são do usuário do ERP que está se autenticando
-        // Esta é uma lógica de exemplo, pode precisar ser ajustada para o seu ERP
-        const [rows] = await connection.execute('SELECT Codigo, Documento, Nome FROM tb_Ambientes_Fornecedor WHERE Documento = ? AND Ativo = \'S\'', [cnpj.replace(/\D/g, '')]);
-        if (rows.length > 0) {
-          req.environment = rows[0];
-          console.log(`Ambiente autenticado como ClienteApp Sync para CNPJ: ${cnpj}`);
-          next();
-        } else {
-          return res.status(401).json({ success: false, error: 'Credenciais de sincronização de cliente inválidas (CNPJ não encontrado ou inativo).' });
-        }
-      } finally {
-        connection.release();
+      req.environment = clientRows[0]; // Stores the found environment data
+      console.log('Ambiente autenticado como Cliente App. Ambiente:', req.environment.Nome);
+    } 
+    // CASO 2: Autenticação para Fornecedor (via headers cnpj, usuario, senha, banco_dados)
+    // Verifica se é o usuário de sincronização específico do MentorWeb para fornecedores
+    else if (usuario === SUPPLIER_SYNC_USER && senha === SUPPLIER_SYNC_PASS) {
+      // Para o usuário de sincronização do fornecedor, usamos o CNPJ do HEADER DIRETAMENTE
+      // porque o DB tb_Ambientes_Fornecedor.Documento armazena o CNPJ FORMATADO.
+      const [supplierRows] = await req.pool.execute(
+        'SELECT * FROM tb_Ambientes_Fornecedor WHERE Documento = ? AND Ativo = "S"', 
+        [cnpj] // Usa o CNPJ do header sem limpar
+      ); 
+      
+      if (supplierRows.length > 0) {
+        req.isSupplierAuth = true;
+        req.environment = supplierRows[0]; // Stores the found environment data
+        console.log('Ambiente autenticado como Fornecedor Sync. Ambiente:', req.environment.Nome);
+      } else {
+        console.log('Credenciais de sincronização de fornecedor inválidas: CNPJ não encontrado ou inativo:', cnpj);
+        return res.status(401).json({ success: false, error: 'Credenciais de sincronização de fornecedor inválidas (CNPJ não encontrado ou inativo).' });
       }
     }
+    else {
+      // Se não autenticou como cliente App nem como Fornecedor Sync
+      console.log('Credenciais de ambiente inválidas: Usuário, senha ou CNPJ incorretos ou inativos.');
+      return res.status(401).json({ error: 'Credenciais de ambiente inválidas (Usuário, senha ou CNPJ incorretos ou inativos).' });
+    }
+
+    next(); // Continua para a próxima middleware/rota se autenticado
   } catch (error) {
-    console.error('Erro na autenticação de ambiente:', error);
-    return res.status(500).json({ success: false, error: 'Erro interno do servidor na autenticação de ambiente.', details: error.message });
+    console.error('Erro na autenticação do ambiente:', error);
+    res.status(500).json({ error: 'Erro interno do servidor durante a autenticação', details: error.message });
   }
 };
 
+// Rotas de sincronização
+app.get('/api/health', (req, res) => {
+  res.status(200).json({ status: 'ok', message: 'Servidor ERP está online.' });
+});
 
-// Rotas Protegidas
+// Middleware de autenticação aplicado a todas as rotas de sincronização
+app.use('/api/sync', authenticateEnvironment);
+
+// Rota para autenticar usuário fornecedor (login)
+app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
+  const { cnpj_cpf, usuario, senha } = req.body;
+  const banco_dados_header = req.headers.banco_dados; // Obtém do header, já que o middleware já setou o pool
+
+  if (!cnpj_cpf || !usuario || !senha || !banco_dados_header) {
+      return res.status(400).json({ success: false, error: 'Documento, usuário, senha e banco de dados são obrigatórios para autenticação.' });
+  }
+
+  const connection = await req.pool.getConnection(); // Usa o pool já estabelecido pelo middleware
+  try {
+      // Limpa o CNPJ/CPF do corpo da requisição para comparação no DB
+      const cnpj_cpf_cleaned = cnpj_cpf.replace(/\D/g, ''); 
+      
+      // Assumimos que tb_Ambientes_Fornecedor.Documento armazena CNPJ/CPF limpo para esta autenticação
+      // Se tb_Ambientes_Fornecedor.Documento armazena formatado, remova o .replace(/\D/g, '') acima
+      const [userRows] = await connection.execute(
+          'SELECT Codigo as ID_Pessoa, Documento as Documento, Nome as Nome, usuario as usuario, Senha as Senha, Ativo as Ativo FROM tb_Ambientes_Fornecedor WHERE Documento = ? AND usuario = ? AND Senha = ? AND Ativo = "S"', 
+          [cnpj_cpf_cleaned, usuario, senha]
+      );
+
+      if (userRows.length > 0) {
+          const user = userRows[0];
+          res.json({
+              success: true,
+              user: {
+                  ID_Pessoa: user.ID_Pessoa,
+                  Documento: user.Documento,
+                  Nome: user.Nome,
+                  usuario: user.usuario,
+                  Ativo: user.Ativo,
+                  // Adicionar id_ambiente_erp e nome_ambiente se aplicável para o usuário
+                  id_ambiente_erp: user.Codigo, // Usar o Codigo da tabela tb_Ambientes_Fornecedor
+                  nome_ambiente: user.Nome // Usar o Nome da tabela tb_Ambientes_Fornecedor
+              }
+          });
+      } else {
+          res.status(401).json({ success: false, error: 'Usuário, senha ou documento inválido, ou usuário inativo.' });
+      }
+  } catch (error) {
+      console.error('Erro na autenticação do usuário fornecedor:', error);
+      res.status(500).json({ success: false, error: 'Erro interno do servidor durante a autenticação.' });
+  } finally {
+      connection.release();
+  }
+});
+
+
+// Rota para enviar produtos do cliente para o MentorWeb
 app.get('/api/sync/send-produtos', authenticateEnvironment, async (req, res) => {
+  if (!req.isClientAppAuth) {
+    return res.status(403).json({ 
+      error: 'Acesso negado', 
+      details: 'Esta rota é exclusiva para aplicativos cliente.' 
+    });
+  }
+
   const connection = await req.pool.getConnection();
   try {
-    const [rows] = await connection.execute('SELECT codigo, produto, codigo_barras, preco_venda, estoque, ativo FROM tb_produtos');
-    res.json({ success: true, produtos: rows });
+    const [rows] = await connection.execute(
+      'SELECT codigo, produto, codigo_barras, preco_venda, estoque, ativo FROM tb_produtos WHERE ativo = "S" ORDER BY produto'
+    );
+    res.json({ success: true, produtos: rows, total: rows.length });
   } catch (error) {
     console.error('Erro ao buscar produtos:', error);
-    res.status(500).json({ success: false, error: 'Erro ao buscar produtos.' });
+    res.status(500).json({ error: 'Erro interno do servidor ao buscar produtos.', details: error.message });
   } finally {
     connection.release();
   }
 });
 
+// Rota para enviar clientes do cliente para o MentorWeb
 app.get('/api/sync/send-clientes', authenticateEnvironment, async (req, res) => {
+  if (!req.isClientAppAuth) {
+    return res.status(403).json({ 
+      error: 'Acesso negado', 
+      details: 'Esta rota é exclusiva para aplicativos cliente.' 
+    });
+  }
+
   const connection = await req.pool.getConnection();
   try {
-    const [rows] = await connection.execute('SELECT codigo, nome, cnpj, cpf, ativo FROM tb_clientes');
-    res.json({ success: true, clientes: rows });
+    const [rows] = await connection.execute(
+      'SELECT codigo, nome, cnpj, cpf, ativo FROM tb_clientes WHERE ativo = "S" ORDER BY nome'
+    );
+    res.json({ success: true, clientes: rows, total: rows.length });
   } catch (error) {
     console.error('Erro ao buscar clientes:', error);
-    res.status(500).json({ success: false, error: 'Erro ao buscar clientes.' });
+    res.status(500).json({ error: 'Erro interno do servidor ao buscar clientes.', details: error.message });
   } finally {
     connection.release();
   }
 });
 
+// Rota para enviar formas de pagamento do cliente para o MentorWeb
 app.get('/api/sync/send-formas-pagamento', authenticateEnvironment, async (req, res) => {
+  if (!req.isClientAppAuth) {
+    return res.status(403).json({ 
+      error: 'Acesso negado', 
+      details: 'Esta rota é exclusiva para aplicativos cliente.' 
+    });
+  }
+
   const connection = await req.pool.getConnection();
   try {
-    const [rows] = await connection.execute('SELECT codigo, forma_pagamento, ativo FROM tb_formas_pagamento');
-    res.json({ success: true, formas: rows });
+    const [rows] = await connection.execute(
+      'SELECT codigo, forma_pagamento, ativo FROM tb_forma_pagamento WHERE ativo = "S" ORDER BY forma_pagamento'
+    );
+    res.json({ success: true, formas: rows, total: rows.length });
   } catch (error) {
     console.error('Erro ao buscar formas de pagamento:', error);
-    res.status(500).json({ success: false, error: 'Erro ao buscar formas de pagamento.' });
+    res.status(500).json({ error: 'Erro interno do servidor ao buscar formas de pagamento.', details: error.message });
   } finally {
     connection.release();
   }
 });
 
+// Rota para enviar comandas do cliente para o MentorWeb
 app.get('/api/sync/send-comandas', authenticateEnvironment, async (req, res) => {
+  if (!req.isClientAppAuth) {
+    return res.status(403).json({ 
+      error: 'Acesso negado', 
+      details: 'Esta rota é exclusiva para aplicativos cliente.' 
+    });
+  }
+
   const connection = await req.pool.getConnection();
   try {
-    const [rows] = await connection.execute('SELECT codigo, comanda, ativo FROM tb_comandas');
-    res.json({ success: true, comandas: rows });
+    const [rows] = await connection.execute(
+      'SELECT codigo, comanda, ativo FROM tb_comanda WHERE ativo = "S" ORDER BY comanda'
+    );
+    res.json({ success: true, comandas: rows, total: rows.length });
   } catch (error) {
     console.error('Erro ao buscar comandas:', error);
-    res.status(500).json({ success: false, error: 'Erro ao buscar comandas.' });
+    res.status(500).json({ error: 'Erro interno do servidor ao buscar comandas.', details: error.message });
   } finally {
     connection.release();
   }
 });
 
+// Rota para receber pedidos do MentorWeb (cliente)
 app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) => {
-  const { pedidos } = req.body; // 'pedidos' é um array de objetos de pedido
-  const connection = await req.pool.getConnection();
-  
-  if (!pedidos || !Array.isArray(pedidos) || pedidos.length === 0) {
-    return res.status(400).json({ success: false, error: 'Array de pedidos vazio ou inválido.' });
+  if (!req.isClientAppAuth) {
+    return res.status(403).json({ 
+      error: 'Acesso negado', 
+      details: 'Esta rota é exclusiva para aplicativos cliente.' 
+    });
   }
 
+  const { pedidos } = req.body;
+
+  if (!pedidos || !Array.isArray(pedidos) || pedidos.length === 0) {
+    return res.status(400).json({ error: 'Dados de pedidos incompletos ou inválidos.' });
+  }
+
+  const connection = await req.pool.getConnection();
   try {
     await connection.beginTransaction();
-    const insertedPedidos = [];
+
+    const pedidos_inseridos = [];
 
     for (const pedido of pedidos) {
-      const {
-        id_pedido_mentorweb, // ID do MentorWeb para referência
-        data,
-        hora,
-        id_cliente,
-        id_forma_pagamento,
-        id_local_retirada,
-        total_produtos,
-        itens
-      } = pedido;
+      const { id_pedido_mentorweb, data, hora, id_cliente, id_forma_pagamento, id_local_retirada, total_produtos, itens } = pedido;
 
-      // Inserir na tabela tb_pedidos
-      const [pedidoResult] = await connection.execute(
-        'INSERT INTO tb_pedidos (data, hora, id_cliente, id_forma_pagamento, id_local_retirada, total_produtos, status, id_pedido_sistema_externo, origem) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [data, hora, id_cliente, id_forma_pagamento, id_local_retirada, total_produtos, 'recebido', id_pedido_mentorweb, 'MentorWeb']
+      // Inserir pedido principal
+      const [resultPedido] = await connection.execute(
+        'INSERT INTO tb_pedidos (data, hora, id_cliente, id_forma_pagamento, id_local_retirada, total_produtos, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [data, hora, id_cliente, id_forma_pagamento, id_local_retirada, total_produtos, 'processando']
       );
+      const newPedidoId = resultPedido.insertId;
 
-      const newPedidoId = pedidoResult.insertId;
-      const insertedItens = [];
-
-      // Inserir os itens do pedido na tabela tb_pedidos_produtos
-      if (itens && Array.isArray(itens)) {
-        for (const item of itens) {
-          const [itemResult] = await connection.execute(
-            'INSERT INTO tb_pedidos_produtos (id_pedido_erp, id_produto, quantidade, unitario, total_produto) VALUES (?, ?, ?, ?, ?)',
-            [newPedidoId, item.id_produto, item.quantidade, item.unitario, item.total_produto]
-          );
-          insertedItens.push({ ...item, id_lcto_erp: itemResult.insertId });
-        }
-      }
-
-      insertedPedidos.push({
-        id_pedido_erp: newPedidoId,
-        id_pedido_mentorweb: id_pedido_mentorweb,
-        itens: insertedItens
-      });
-    }
-
-    await connection.commit();
-    res.json({ success: true, message: 'Pedidos recebidos e processados com sucesso.', pedidos_inseridos: insertedPedidos });
-  } catch (error) {
-    await connection.rollback();
-    console.error('Erro ao receber pedidos:', error);
-    res.status(500).json({ success: false, error: 'Erro ao processar pedidos.', details: error.message });
-  } finally {
-    connection.release();
-  }
-});
-
-app.get('/api/sync/send-produtos-fornecedor', authenticateEnvironment, async (req, res) => {
-  const connection = await req.pool.getConnection();
-  try {
-    // Certifique-se de que os nomes das colunas aqui correspondem exatamente à sua tabela tb_Produtos_Fornecedor
-    const [rows] = await connection.execute('SELECT id, nome, preco_unitario, Ativo as ativo FROM tb_Produtos_Fornecedor');
-    res.json({ success: true, produtos: rows });
-  } catch (error) {
-    console.error('Erro ao buscar produtos do fornecedor:', error);
-    res.status(500).json({ success: false, error: 'Erro ao buscar produtos do fornecedor.' });
-  } finally {
-    connection.release();
-  }
-});
-
-app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (req, res) => {
-  // Desestruturar os dados do corpo da requisição
-  const { produtos, total_pedido, data_pedido, cliente_nome, cliente_cnpj } = req.body;
-
-  // IMPORTANTE: Mapear cliente_nome para a variável 'cliente' que é usada na validação
-  // Esta linha garante que 'cliente' não será undefined se 'cliente_nome' estiver presente
-  const cliente = cliente_nome;
-
-  // Validação dos dados essenciais
-  if (!produtos || !Array.isArray(produtos) || produtos.length === 0 || total_pedido === undefined || cliente === undefined) {
-    // Adicionar um log detalhado para entender qual parte da validação falhou
-    console.error('receive-pedido-fornecedor Validation Failed:', {
-      hasProdutos: !!produtos,
-      isArrayProdutos: Array.isArray(produtos),
-      isProdutosEmpty: produtos && produtos.length === 0,
-      isTotalPedidoUndefined: total_pedido === undefined,
-      isClienteUndefined: cliente === undefined, // Isso agora deve ser false se cliente_nome existe
-      receivedClienteName: cliente_nome // O valor real recebido
-    });
-    return res.status(400).json({ success: false, error: 'Dados do pedido para fornecedor incompletos (produtos, total_pedido, cliente são obrigatórios).' });
-  }
-
-  const connection = await req.pool.getConnection();
-  try {
-    await connection.beginTransaction();
-
-    // Mapear cliente_cnpj (formatado pelo frontend) para o formato sem pontuação para busca no banco
-    const cleanedClienteCnpj = cliente_cnpj.replace(/\D/g, ''); 
-
-    // Buscar o Codigo do ambiente do cliente comprador na tabela tb_Ambientes_Fornecedor
-    // A busca deve ser feita pelo Documento (CNPJ/CPF)
-    const [ambienteRows] = await connection.execute('SELECT Codigo FROM tb_Ambientes_Fornecedor WHERE Documento = ? AND Ativo = \'S\'', [cleanedClienteCnpj]);
-    
-    let idAmbienteCliente = null;
-    if (ambienteRows.length > 0) {
-      idAmbienteCliente = ambienteRows[0].Codigo;
-    } else {
-      // Se o cliente não for encontrado por CNPJ, logar e retornar um erro específico
-      console.error(`CNPJ do cliente/ambiente '${cliente_cnpj}' não encontrado ou inativo na tabela tb_Ambientes_Fornecedor do fornecedor. Pedido de: ${cliente_nome}`);
-      throw new Error(`CNPJ do cliente '${cliente_cnpj}' não cadastrado ou inativo na base do fornecedor. Verifique o cadastro em tb_Ambientes_Fornecedor.`);
-    }
-
-    // Inserir o pedido principal
-    const [pedidoResult] = await connection.execute(
-      'INSERT INTO tb_Pedidos_Fornecedor (data_hora_lancamento, id_ambiente, valor_total, status, cliente_origem) VALUES (?, ?, ?, ?, ?)',
-      [data_pedido, idAmbienteCliente, total_pedido, 'recebido', cliente_nome]
-    );
-
-    const newPedidoId = pedidoResult.insertId;
-
-    // Inserir os itens do pedido
-    if (produtos && Array.isArray(produtos)) {
-      for (const produto of produtos) {
+      // Inserir itens do pedido
+      for (const item of itens) {
         await connection.execute(
-          'INSERT INTO tb_Pedidos_Produtos_Fornecedor (id_pedido, id_produto, quantidade, preco_unitario, valor_total) VALUES (?, ?, ?, ?, ?)',
-          [newPedidoId, produto.id_produto, produto.quantidade, produto.valor_unitario, produto.total_produto]
+          'INSERT INTO tb_pedidos_produtos (id_pedido, id_produto, quantidade, unitario, total_produto) VALUES (?, ?, ?, ?, ?)',
+          [newPedidoId, item.id_produto, item.quantidade, item.unitario, item.total_produto]
         );
       }
+      pedidos_inseridos.push({ id_pedido_mentorweb, id_pedido_erp: newPedidoId });
     }
 
     await connection.commit();
-    res.json({ success: true, message: 'Pedido de fornecedor recebido e processado com sucesso.', codigo_pedido: newPedidoId });
+    res.json({ success: true, message: 'Pedidos recebidos e processados com sucesso!', pedidos_inseridos });
+
   } catch (error) {
     await connection.rollback();
-    console.error('Erro ao processar pedido de fornecedor:', error);
-    res.status(500).json({ success: false, error: 'Erro ao processar pedido de fornecedor.', details: error.message });
+    console.error('Erro ao processar pedidos:', error);
+    res.status(500).json({ error: 'Erro interno do servidor ao processar pedidos.', details: error.message });
   } finally {
     connection.release();
   }
 });
 
-
-app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
-  const { usuario, senha, cnpj_cpf, banco_dados } = req.body;
-
-  if (!cnpj_cpf || !usuario || !senha || !banco_dados) {
-    return res.status(400).json({ success: false, error: 'Documento, usuário, senha e banco de dados são obrigatórios para autenticação.' });
-  }
-
-  try {
-    const pool = await getDatabasePool(banco_dados);
-    const connection = await pool.getConnection();
-
-    try {
-      const cleanedCnpjCpf = cnpj_cpf.replace(/\D/g, ''); // Remover formatação
-      const [rows] = await connection.execute(
-        'SELECT Codigo, ID_Pessoa, Documento, Nome, Senha, Ativo, DHU, IDUser, usuario FROM tb_Ambientes_Fornecedor WHERE Documento = ? AND usuario = ? AND Senha = ? AND Ativo = \'S\'',
-        [cleanedCnpjCpf, usuario, senha]
-      );
-
-      if (rows.length > 0) {
-        const user = rows[0];
-        res.json({
-          success: true,
-          user: {
-            ID_Pessoa: user.ID_Pessoa,
-            Documento: user.Documento,
-            Nome: user.Nome,
-            usuario: user.usuario,
-            Ativo: user.Ativo,
-            // Adicionar campos de ambiente se a tabela os contiver ou se houver um mapeamento
-            id_ambiente_erp: user.Codigo, // Mapeando Codigo para id_ambiente_erp
-            nome_ambiente: user.Nome     // Mapeando Nome para nome_ambiente
-          }
-        });
-      } else {
-        res.status(401).json({ success: false, error: 'Usuário, senha ou documento inválido, ou usuário inativo.' });
-      }
-    } finally {
-      connection.release();
-    }
-  } catch (error) {
-    console.error('Erro ao autenticar usuário fornecedor com ERP:', error);
-    res.status(500).json({ success: false, error: 'Erro interno do servidor durante a autenticação.', details: error.message });
-  }
-});
-
-// Rota de saúde para verificar conectividade
-app.get('/api/health', (req, res) => {
-  res.status(200).json({ status: 'ok', message: 'ERP Sync server is running.' });
-});
-// Rota para enviar produtos do fornecedor para o MentorWeb
+// Rota para enviar produtos do fornecedor para o MentorWeb (usado pelo usuário fornecedor)
 app.get('/api/sync/send-produtos-fornecedor', authenticateEnvironment, async (req, res) => {
   if (!req.isSupplierAuth) {
     return res.status(403).json({ 
@@ -416,28 +372,28 @@ app.get('/api/sync/send-produtos-fornecedor', authenticateEnvironment, async (re
   try {
     console.log('Buscando produtos do fornecedor...');
     
-    // Buscar produtos ativos do fornecedor
-    // Ajuste a query conforme sua estrutura de tabelas
+    // CORREÇÃO: Ajuste a query para a sua tabela tb_Produtos_Fornecedor
+    // e os aliases para corresponder ao que o frontend espera.
     const [rows] = await connection.execute(
       `SELECT 
         id as id,
-        produto as nome,
-        codigo_barras,
-        preco_venda as preco_unitario,
-        estoque
-      FROM tb_Produtos 
-      WHERE ativo = 'S'
-      ORDER BY produto`
+        nome as produto,
+        preco_unitario,
+        Ativo as ativo
+      FROM tb_Produtos_Fornecedor 
+      WHERE Ativo = 'S'
+      ORDER BY nome`
     );
 
     console.log(`Encontrados ${rows.length} produtos do fornecedor.`);
 
     const produtos = rows.map(row => ({
       id: row.id,
-      nome: row.nome,
-      codigo_barras: row.codigo_barras || '',
-      preco_unitario: parseFloat(row.preco_unitario) || 0,
-      estoque: parseInt(row.estoque) || 0
+      produto: row.produto, // Aliased from 'nome'
+      preco_venda: parseFloat(row.preco_unitario) || 0, // Frontend espera preco_venda
+      // Se tiver estoque ou codigo_barras na tb_Produtos_Fornecedor, adicione aqui
+      estoque: null, // Ou o campo correto do seu DB
+      codigo_barras: null // Ou o campo correto do seu DB
     }));
 
     res.json({
@@ -457,8 +413,76 @@ app.get('/api/sync/send-produtos-fornecedor', authenticateEnvironment, async (re
   }
 });
 
+// Rota para receber pedidos para fornecedor (usado por cliente ou usuário fornecedor)
+app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (req, res) => {
+  if (!req.isSupplierAuth) { // Esta rota deve ser autenticada como Fornecedor Sync
+    return res.status(403).json({ 
+      error: 'Acesso negado', 
+      details: 'Esta rota é exclusiva para autenticação de fornecedor.' 
+    });
+  }
 
-// Iniciar o servidor
+  const { produtos, total_pedido, data_pedido, cliente_nome, cliente_cnpj } = req.body;
+  
+  // CORREÇÃO: A variável 'cliente' agora aponta para o nome do cliente que fez o pedido
+  const cliente = cliente_nome; 
+
+  console.log('Dados recebidos para receive-pedido-fornecedor:', {
+    produtos_count: produtos ? produtos.length : 0,
+    total_pedido, data_pedido, cliente_nome, cliente_cnpj
+  });
+
+  if (!produtos || !Array.isArray(produtos) || produtos.length === 0 || total_pedido === undefined || cliente === undefined) {
+    return res.status(400).json({ error: 'Dados do pedido para fornecedor incompletos (produtos, total_pedido, cliente são obrigatórios).' });
+  }
+
+  const connection = await req.pool.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    // Encontrar o id_ambiente (ID do cliente) pelo CNPJ
+    // Remove qualquer formatação do CNPJ antes de buscar no banco
+    const cliente_cnpj_cleaned = cliente_cnpj.replace(/\D/g, ''); 
+    const [ambienteRows] = await connection.execute(
+      'SELECT Codigo FROM tb_Ambientes_Fornecedor WHERE Documento = ? AND Ativo = "S"', 
+      [cliente_cnpj_cleaned]
+    );
+
+    const idAmbienteCliente = ambienteRows.length > 0 ? ambienteRows[0].Codigo : null;
+    
+    if (!idAmbienteCliente) {
+      throw new Error(`CNPJ do cliente/ambiente '${cliente_cnpj}' não encontrado ou inativo no banco de dados do fornecedor.`);
+    }
+
+    // Inserir pedido principal na tb_Pedidos_Fornecedor
+    // A coluna id_ambiente agora recebe o Codigo do ambiente do CLIENTE
+    const [resultPedido] = await connection.execute(
+      'INSERT INTO tb_Pedidos_Fornecedor (data_hora_lancamento, id_ambiente, valor_total, status, cliente_origem) VALUES (NOW(), ?, ?, ?, ?)',
+      [idAmbienteCliente, total_pedido, 'recebido', cliente_nome] // 'recebido' ou outro status inicial
+    );
+    const newPedidoId = resultPedido.insertId;
+
+    // Inserir itens do pedido na tb_Pedidos_Produtos_Fornecedor
+    for (const item of produtos) {
+      await connection.execute(
+        'INSERT INTO tb_Pedidos_Produtos_Fornecedor (id_pedido, id_produto, quantidade, preco_unitario, valor_total) VALUES (?, ?, ?, ?, ?)',
+        [newPedidoId, item.id_produto, item.quantidade, item.valor_unitario, item.total_produto]
+      );
+    }
+
+    await connection.commit();
+    res.json({ success: true, message: 'Pedido para fornecedor recebido e processado com sucesso!', codigo_pedido: newPedidoId });
+
+  } catch (error) {
+    await connection.rollback();
+    console.error('Erro ao processar pedido para fornecedor:', error);
+    res.status(500).json({ error: 'Erro interno do servidor ao processar pedido para fornecedor.', details: error.message });
+  } finally {
+    connection.release();
+  }
+});
+
+// Inicia o servidor
 app.listen(PORT, () => {
-  console.log(`ERP Sync server is running on port ${PORT}`);
+  console.log(`Servidor de sincronização ERP rodando na porta ${PORT}`);
 });
