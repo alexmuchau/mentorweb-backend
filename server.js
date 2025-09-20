@@ -110,16 +110,10 @@ const authenticateEnvironment = async (req, res, next) => {
     // CASO 1: Autenticação para Fornecedor (credenciais de sistema)
     if (usuario === SUPPLIER_SYNC_USER && senha === SUPPLIER_SYNC_PASS) {
         req.isSupplierAuth = true;
-        const cleanCnpj = cnpj.replace(/\D/g, '');
-        // Para o fornecedor, precisamos encontrar o ambiente pelo CNPJ dele nos headers
-        const [supplierEnvRows] = await req.pool.execute(
-            'SELECT Codigo FROM tb_Ambientes_Fornecedor WHERE Documento = ?',
-            [cleanCnpj]
-        );
-        const supplierEnvId = supplierEnvRows.length > 0 ? supplierEnvRows[0].Codigo : null;
-        
-        req.environment = { cnpj, usuario, tipo: 'fornecedor_sync', Codigo: supplierEnvId };
-        console.log(`Ambiente autenticado como Fornecedor Sync. ID do Ambiente: ${supplierEnvId}`);
+        // Para fornecedor, o ambiente é validado, mas não precisamos necessariamente de um 'Codigo' aqui,
+        // já que a rota de recebimento de pedido buscará o ID do cliente pelo nome.
+        req.environment = { cnpj, usuario, tipo: 'fornecedor_sync' };
+        console.log(`Ambiente autenticado como Fornecedor Sync.`);
         return next();
     }
     
@@ -177,7 +171,6 @@ app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
     const pool = await getDatabasePool(banco_dados);
     connection = await pool.getConnection();
     
-    // --- CORREÇÃO APLICADA AQUI ---
     // Remove a formatação do CNPJ/CPF antes de consultar o banco.
     const clean_cnpj_cpf = cnpj_cpf.replace(/\D/g, '');
 
@@ -344,10 +337,11 @@ app.post('/api/sync/receive-pedido-fornecedor', async (req, res) => {
     return res.status(403).json({ error: "Acesso não autorizado para esta rota." });
   }
 
+  // --- CORREÇÃO PRINCIPAL APLICADA AQUI ---
   const { produtos, total_pedido, cliente } = req.body;
 
-  if (!Array.isArray(produtos) || produtos.length === 0 || !total_pedido) {
-    return res.status(400).json({ error: 'Dados do pedido para fornecedor incompletos.' });
+  if (!Array.isArray(produtos) || produtos.length === 0 || !total_pedido || !cliente) {
+    return res.status(400).json({ error: 'Dados do pedido para fornecedor incompletos (produtos, total_pedido, cliente são obrigatórios).' });
   }
 
   let connection;
@@ -357,22 +351,31 @@ app.post('/api/sync/receive-pedido-fornecedor', async (req, res) => {
 
     console.log(`Recebendo pedido para fornecedor. Cliente de origem (informativo): ${cliente}`);
 
-    const idAmbientePedido = req.environment.Codigo;
+    // Passo 1: Encontrar o Codigo do ambiente do cliente que está fazendo o pedido
+    console.log(`Buscando ID do ambiente para o cliente: '${cliente}'`);
+    const [clienteRows] = await connection.execute(
+        'SELECT Codigo FROM tb_Ambientes_Fornecedor WHERE Nome = ?',
+        [cliente]
+    );
 
-    if (!idAmbientePedido) {
-      throw new Error(`ID do ambiente do requisitante não encontrado. Falha na autenticação do ambiente.`);
+    if (clienteRows.length === 0) {
+        // Se o cliente não for encontrado, lança um erro claro.
+        throw new Error(`O cliente '${cliente}' que está tentando fazer o pedido não foi encontrado na tabela de ambientes do fornecedor.`);
     }
-    
-    console.log(`ID do ambiente que está fazendo o pedido: ${idAmbientePedido}`);
 
+    const idAmbienteCliente = clienteRows[0].Codigo;
+    console.log(`ID do ambiente do cliente encontrado: ${idAmbienteCliente}`);
+
+    // Passo 2: Inserir o pedido usando o ID do ambiente do cliente
     const [result] = await connection.execute(
       'INSERT INTO tb_Pedidos_Fornecedor (data_hora_lancamento, id_ambiente, valor_total, status) VALUES (NOW(), ?, ?, ?)',
-      [idAmbientePedido, total_pedido, 'recebido']
+      [idAmbienteCliente, total_pedido, 'recebido']
     );
 
     const idPedidoFornecedor = result.insertId;
     console.log(`Pedido inserido em tb_Pedidos_Fornecedor com ID: ${idPedidoFornecedor}`);
 
+    // Passo 3: Inserir os produtos do pedido
     for (const item of produtos) {
       await connection.execute(
         'INSERT INTO tb_Pedidos_Produtos_Fornecedor (id_pedido, id_produto, quantidade, preco_unitario, valor_total, identificador_cliente_item) VALUES (?, ?, ?, ?, ?, ?)',
