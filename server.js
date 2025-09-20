@@ -249,13 +249,26 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
 
 // ROTA PARA FORNECEDORES: Buscar produtos para o aplicativo de fornecedores
 app.get('/api/sync/send-produtos-fornecedor', authenticateEnvironment, async (req, res) => {
-    if (!req.isSupplierAuth && req.environment.tipo !== 'fornecedor_sync') {
+    // Esta rota espera as credenciais do MentorWeb para o FORNECEDOR nos headers,
+    // e o `banco_dados` no header deve ser 'muchaucom_pisciNew'.
+    // A query deve ser ajustada para a tabela tb_Produtos_Fornecedor
+    if (req.environment.tipo !== 'fornecedor_sync') { // req.isSupplierAuth já é coberto aqui.
         return res.status(403).json({ success: false, error: 'Acesso negado. Apenas usuários de sincronização de fornecedor podem acessar esta rota.' });
     }
 
     try {
-        const [rows] = await req.pool.execute('SELECT id, nome, codigo, codigo_barras, preco_unitario, estoque FROM tb_produtos WHERE ativo = "S"'); // Ajuste sua query real
-        res.json({ success: true, produtos: rows });
+        // Ajustado para tb_Produtos_Fornecedor e suas colunas
+        const [rows] = await req.pool.execute('SELECT id, nome, preco_unitario, Ativo FROM tb_Produtos_Fornecedor WHERE Ativo = "S"'); 
+        // Mapear 'Ativo' para 'ativo' (minúsculo) se o frontend espera assim
+        const produtosFormatados = rows.map(p => ({
+            id: p.id,
+            produto: p.nome, // Renomear 'nome' para 'produto' para consistência no frontend
+            preco_venda: p.preco_unitario, // Renomear 'preco_unitario' para 'preco_venda'
+            ativo: p.Ativo // Manter 'ativo'
+            // id, codigo_barras e estoque não existem nesta tabela
+        }));
+
+        res.json({ success: true, produtos: produtosFormatados });
     } catch (error) {
         console.error('Erro ao buscar produtos para fornecedor:', error);
         res.status(500).json({ success: false, error: 'Erro ao buscar produtos para fornecedor', details: error.message });
@@ -267,8 +280,8 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
     // Esta rota espera as credenciais do MentorWeb para o FORNECEDOR nos headers,
     // e o BODY da requisição contém os dados do pedido (produtos, total, etc.)
     // E o `cliente_nome_mw` para saber quem fez o pedido.
-
-    if (!req.isSupplierAuth && req.environment.tipo !== 'fornecedor_sync') {
+    // As inserções agora usarão tb_Pedidos_Fornecedor e tb_Pedidos_Produtos_Fornecedor
+    if (req.environment.tipo !== 'fornecedor_sync') { // req.isSupplierAuth já é coberto aqui.
         return res.status(403).json({ success: false, error: 'Acesso negado. Apenas usuários de sincronização de fornecedor podem acessar esta rota.' });
     }
 
@@ -283,49 +296,36 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
         connection = await req.pool.getConnection();
         await connection.beginTransaction();
 
-        // Inserir na tabela principal de pedidos (tb_Pedidos) do fornecedor
-        // Mapeamento:
-        //   data_hora_lancamento: data_pedido
-        //   valor_total: total_pedido
-        //   status: 'processando'
-        //   id_pedido_sistema_externo: Você pode usar 'cliente' para identificar quem fez o pedido
-        //   id_ambiente: Isso precisa ser definido. Se tb_Pedidos tem id_ambiente,
-        //               você precisa decidir como obtê-lo. Pode ser um valor fixo,
-        //               ou vir do `req.headers.banco_dados` se mapear ambientes.
-        //               Por simplicidade, estou usando um valor fixo de exemplo.
-        //               Você também pode querer usar `req.environment.cnpj` ou outro identificador.
-
+        // Inserir na tabela principal de pedidos (tb_Pedidos_Fornecedor)
+        // Mapeamento conforme sua nova estrutura tb_Pedidos_Fornecedor
         const [pedidoResult] = await connection.execute(
-            `INSERT INTO tb_Pedidos (data_hora_lancamento, valor_total, status, id_pedido_sistema_externo, id_ambiente)
+            `INSERT INTO tb_Pedidos_Fornecedor (data_hora_lancamento, valor_total, status, id_pedido_sistema_externo, id_ambiente)
              VALUES (?, ?, ?, ?, ?)`,
             [
                 data_pedido, // A data já vem formatada
                 total_pedido,
                 'processando', // Status padrão para novos pedidos
                 cliente,      // Usando o nome do cliente/fornecedor do MentorWeb como identificador externo
-                100           // EX: Um ID de ambiente fixo. AJUSTE ISSO CONFORME SEU NEGÓCIO!
+                // id_ambiente: Este campo é 'id_ambiente' na sua tb_Pedidos_Fornecedor.
+                // Como não vem do MentorWeb no corpo, e não está no header do authenticateEnvironment,
+                // você precisará definir como irá preenchê-lo.
+                // Sugestão: Se cada FornecedorApp tem um único ambiente, pode ser fixo ou mapeado.
+                // Por agora, estou usando um valor fixo de exemplo. AJUSTE ISSO!
+                100 // EX: Um ID de ambiente fixo. AJUSTE ISSO CONFORME SEU NEGÓCIO!
             ]
         );
 
         const id_pedido_inserido = pedidoResult.insertId; // Obtém o ID do pedido recém-inserido
 
-        // Inserir os itens do pedido na tabela (tb_Pedidos_Produtos)
+        // Inserir os itens do pedido na tabela (tb_Pedidos_Produtos_Fornecedor)
+        // Mapeamento conforme sua nova estrutura tb_Pedidos_Produtos_Fornecedor
         for (const item of produtos) {
-            // Mapeamento:
-            //   id_pedido: id_pedido_inserido
-            //   id_produto: item.id_produto (ID do produto no sistema do FORNECEDOR)
-            //   quantidade: item.quantidade
-            //   preco_unitario: item.valor_unitario
-            //   valor_total: item.total_produto
-            //   identificador_cliente_item: Você pode passar o ID do ClienteApp ou UsuarioFornecedorApp do MentorWeb aqui
-            //                               Se seu ERP precisa saber de qual cliente/fornecedor específico veio o item.
-
             await connection.execute(
-                `INSERT INTO tb_Pedidos_Produtos (id_pedido, id_produto, quantidade, preco_unitario, valor_total)
+                `INSERT INTO tb_Pedidos_Produtos_Fornecedor (id_pedido, id_produto, quantidade, preco_unitario, valor_total)
                  VALUES (?, ?, ?, ?, ?)`,
                 [
                     id_pedido_inserido,
-                    item.id_produto,
+                    item.id_produto, // ID do produto no sistema do FORNECEDOR
                     item.quantidade,
                     item.valor_unitario,
                     item.total_produto
@@ -376,14 +376,13 @@ app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
     connection = await pool.getConnection(); // Assign to the declared connection
 
     // REALIZA A AUTENTICAÇÃO DO USUÁRIO FINAL NA TABELA DO SEU BANCO DE DADOS
-    // Adicione a consulta à tb_Pessoas (ou tabela de usuários) e tb_Ambientes (para obter nome e ID)
+    // A consulta agora é na tb_Ambientes_Fornecedor, que contém os dados de usuário e ambiente.
     const [rows] = await connection.execute(
         `SELECT
-            p.ID_Pessoa, p.cnpj_cpf AS Documento, p.nome AS Nome, p.usuario, p.ativo AS Ativo,
-            a.Codigo AS id_ambiente_erp, a.nome AS nome_ambiente
-        FROM tb_Pessoas p
-        JOIN tb_Ambientes a ON p.id_ambiente = a.Codigo -- Supondo que tb_Pessoas tenha um id_ambiente
-        WHERE p.cnpj_cpf = ? AND p.usuario = ? AND p.senha = ? AND p.ativo = 'S'`,
+            ID_Pessoa, Documento, Nome AS NomePessoa, usuario, Ativo,
+            Codigo AS id_ambiente_erp, Nome AS nome_ambiente
+        FROM tb_Ambientes_Fornecedor
+        WHERE Documento = ? AND usuario = ? AND Senha = ? AND Ativo = 'S'`,
         [cnpj_cpf, usuario, senha]
     );
     
@@ -394,7 +393,7 @@ app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
             user: {
                 ID_Pessoa: user.ID_Pessoa,
                 Documento: user.Documento,
-                Nome: user.Nome,
+                Nome: user.NomePessoa, // Usar NomePessoa aqui para o nome da pessoa/usuário
                 usuario: user.usuario,
                 Ativo: user.Ativo,
                 id_ambiente_erp: user.id_ambiente_erp,
