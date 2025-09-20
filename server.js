@@ -109,26 +109,10 @@ const authenticateEnvironment = async (req, res, next) => {
 
     // Limpa o CNPJ para autenticação de ClienteApp, pois o BD armazena sem formatação para eles
     // Apenas aplica se não for o usuário de sincronização do fornecedor, para evitar conflitos
-    let cnpj_cleaned = cnpj; // Assume que o CNPJ pode já vir limpo ou será limpo mais tarde
-    if (!(usuario === SUPPLIER_SYNC_USER && senha === SUPPLIER_SYNC_PASS)) {
-        cnpj_cleaned = cnpj.replace(/\D/g, ''); // Limpa o CNPJ apenas para usuários normais
-    }
+    let cnpj_cleaned = cnpj.replace(/\D/g, ''); // Limpa o CNPJ por padrão para ClienteApp
 
-    // CASO 1: Autenticação para ClienteApp (via headers cnpj, usuario, senha, banco_dados)
-    // Para clientes, assumimos que o CNPJ no DB está limpo (sem formatação)
-    const [clientRows] = await req.pool.execute(
-      'SELECT Codigo as Codigo, Nome as Nome, Senha as Senha, Ativo as Ativo FROM tb_ambientes WHERE Documento = ? AND usuario = ? AND Senha = ? AND Ativo = "S"',
-      [cnpj_cleaned, usuario, senha]
-    );
-
-    if (clientRows.length > 0) {
-      req.isClientAppAuth = true;
-      req.environment = clientRows[0]; // Stores the found environment data
-      console.log('Ambiente autenticado como Cliente App. Ambiente:', req.environment.Nome);
-    } 
-    // CASO 2: Autenticação para Fornecedor (via headers cnpj, usuario, senha, banco_dados)
-    // Verifica se é o usuário de sincronização específico do MentorWeb para fornecedores
-    else if (usuario === SUPPLIER_SYNC_USER && senha === SUPPLIER_SYNC_PASS) {
+    // CORREÇÃO AQUI: CASO 2 (Fornecedor Sync) é verificado PRIMEIRO
+    if (usuario === SUPPLIER_SYNC_USER && senha === SUPPLIER_SYNC_PASS) {
       // Para o usuário de sincronização do fornecedor, usamos o CNPJ do HEADER DIRETAMENTE
       // porque o DB tb_Ambientes_Fornecedor.Documento armazena o CNPJ FORMATADO.
       const [supplierRows] = await req.pool.execute(
@@ -145,10 +129,24 @@ const authenticateEnvironment = async (req, res, next) => {
         return res.status(401).json({ success: false, error: 'Credenciais de sincronização de fornecedor inválidas (CNPJ não encontrado ou inativo).' });
       }
     }
-    else {
-      // Se não autenticou como cliente App nem como Fornecedor Sync
-      console.log('Credenciais de ambiente inválidas: Usuário, senha ou CNPJ incorretos ou inativos.');
-      return res.status(401).json({ error: 'Credenciais de ambiente inválidas (Usuário, senha ou CNPJ incorretos ou inativos).' });
+    // CORREÇÃO AQUI: CASO 1 (ClienteApp) é verificado DEPOIS
+    else { 
+      // Caso não seja o usuário de sync do fornecedor, tenta autenticar como ClienteApp
+      // Assumimos que o CNPJ no DB tb_ambientes está limpo (sem formatação)
+      const [clientRows] = await req.pool.execute(
+        'SELECT Codigo as Codigo, Nome as Nome, Senha as Senha, Ativo as Ativo FROM tb_ambientes WHERE Documento = ? AND usuario = ? AND Senha = ? AND Ativo = "S"',
+        [cnpj_cleaned, usuario, senha]
+      );
+
+      if (clientRows.length > 0) {
+        req.isClientAppAuth = true;
+        req.environment = clientRows[0]; // Stores the found environment data
+        console.log('Ambiente autenticado como Cliente App. Ambiente:', req.environment.Nome);
+      } else {
+        // Se não autenticou como Cliente App nem como Fornecedor Sync
+        console.log('Credenciais de ambiente inválidas: Usuário, senha ou CNPJ incorretos ou inativos.');
+        return res.status(401).json({ error: 'Credenciais de ambiente inválidas (Usuário, senha ou CNPJ incorretos ou inativos).' });
+      }
     }
 
     next(); // Continua para a próxima middleware/rota se autenticado
@@ -477,61 +475,6 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
     await connection.rollback();
     console.error('Erro ao processar pedido para fornecedor:', error);
     res.status(500).json({ error: 'Erro interno do servidor ao processar pedido para fornecedor.', details: error.message });
-  } finally {
-    connection.release();
-  }
-});
-
-// Rota para enviar produtos do ERP para o MentorWeb (ClienteApp)
-app.get('/api/sync/send-produtos', authenticateEnvironment, async (req, res) => {
-  if (!req.isClientAppAuth) {
-    return res.status(403).json({ 
-      error: 'Acesso negado', 
-      details: 'Esta rota é exclusiva para autenticação de cliente.' 
-    });
-  }
-
-  const connection = await req.pool.getConnection();
-  try {
-    console.log('Buscando produtos para cliente...');
-    
-    // Buscar produtos ativos - ajuste conforme sua estrutura de tabelas
-    const [rows] = await connection.execute(
-      `SELECT 
-        codigo as codigo,
-        produto as produto,
-        codigo_barras,
-        preco_venda,
-        estoque,
-        ativo
-      FROM tb_Produtos 
-      WHERE ativo = 'S'
-      ORDER BY produto`
-    );
-
-    console.log(`Encontrados ${rows.length} produtos.`);
-
-    const produtos = rows.map(row => ({
-      codigo: row.codigo,
-      produto: row.produto,
-      codigo_barras: row.codigo_barras || '',
-      preco_venda: parseFloat(row.preco_venda) || 0,
-      estoque: parseInt(row.estoque) || 0,
-      ativo: row.ativo
-    }));
-
-    res.json({
-      success: true,
-      produtos: produtos,
-      total: produtos.length
-    });
-
-  } catch (error) {
-    console.error('Erro ao buscar produtos:', error);
-    res.status(500).json({ 
-      error: 'Erro interno do servidor', 
-      details: error.message 
-    });
   } finally {
     connection.release();
   }
