@@ -408,48 +408,7 @@ app.post('/api/sync/receive-pedido-fornecedor', async (req, res) => {
     if (connection) connection.release();
   }
 });
-// Rota para enviar ambientes do fornecedor
-app.get('/api/sync/send-ambientes-fornecedor', authenticateEnvironment, async (req, res) => {
-  console.log('--- INICIANDO send-ambientes-fornecedor ---');
-  
-  try {
-    if (!req.isSupplierAuth) {
-      return res.status(403).json({ 
-        error: 'Acesso negado', 
-        details: 'Esta rota requer autenticação de fornecedor.' 
-      });
-    }
 
-    const query = `
-      SELECT Codigo, ID_Pessoa, Documento, Nome, Ativo 
-      FROM tb_Ambientes_Fornecedor 
-      WHERE Ativo = 'S'
-      ORDER BY Nome
-    `;
-
-    const [rows] = await req.pool.execute(query);
-    
-    console.log(`Ambientes encontrados: ${rows.length}`);
-    
-    res.json({
-      success: true,
-      ambientes: rows,
-      total: rows.length
-    });
-
-  } catch (error) {
-    console.error('Erro ao buscar ambientes do fornecedor:', error);
-    res.status(500).json({
-      error: 'Erro interno do servidor',
-      details: error.message
-    });
-  }
-});
-
-// Tratamento de erro 404
-app.use((req, res) => {
-  res.status(404).json({ error: 'Rota não encontrada' });
-});
 
 // Tratamento de erros geral
 app.use((err, req, res, next) => {
