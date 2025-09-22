@@ -529,6 +529,9 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
     return res.status(400).json({ error: 'Dados do pedido inválidos ou incompletos.' });
   }
 
+  // Declara a variável data_pedido e atribui o valor atual
+  const data_pedido = new Date().toISOString().slice(0, 19).replace('T', ' ');
+
   let connection;
   try {
     connection = await req.pool.getConnection();
