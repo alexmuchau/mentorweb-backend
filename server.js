@@ -47,7 +47,13 @@ const removeDocumentMask = (documento) => {
   return documento.replace(/\D/g, '');
 };
 
-// Função para obter ou criar um pool de conexão para um banco de dados específico
+/**
+ * Função para obter ou criar um pool de conexão para um banco de dados específico.
+ * A utilização de pools de conexão é crucial para a performance e escalabilidade,
+ * pois evita a sobrecarga de criar e fechar conexões para cada requisição.
+ * @param {string} databaseName - O nome do banco de dados.
+ * @returns {Promise<mysql.Pool>} O pool de conexão.
+ */
 async function getDatabasePool(databaseName) {
   if (!databaseName) {
     throw new Error('Nome do banco de dados não fornecido.');
@@ -66,7 +72,7 @@ async function getDatabasePool(databaseName) {
     database: databaseName, // O banco de dados padrão para este pool
     port: parseInt(process.env.DB_PORT || 3306), // Adicionado parseInt para garantir que a porta seja um número inteiro
     waitForConnections: true,
-    connectionLimit: 10, // Ajuste conforme necessário
+    connectionLimit: 10, // Ajuste conforme a carga do servidor. Um valor de 10 é um bom ponto de partida.
     queueLimit: 0
   });
 
@@ -90,13 +96,6 @@ async function getDatabasePool(databaseName) {
 
 // Middleware de autenticação de ambiente
 const authenticateEnvironment = async (req, res, next) => {
-  console.log('--- HEADERS RECEBIDOS EM authenticateEnvironment ---');
-  console.log('cnpj:', req.headers.cnpj);
-  console.log('usuario:', req.headers.usuario);
-  console.log('senha:', req.headers.senha ? '******' : 'N/A');
-  console.log('banco_dados:', req.headers.banco_dados);
-  console.log('-------------------------------------------------');
-
   const { cnpj, usuario, senha, banco_dados } = req.headers;
 
   // Inicializa req.pool e flags
@@ -157,12 +156,11 @@ app.get('/api/health', (req, res) => {
 
 // ROTA ESPECIAL: Autenticação de usuário fornecedor (NÃO USA authenticateEnvironment)
 app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
-  const { cnpj_cpf, usuario, senha } = req.body; // cnpj_cpf AQUI AINDA VEM COM MÁSCARA DO FRONTEND
+  const { cnpj_cpf, usuario, senha } = req.body;
   const { 'banco_dados': banco_dados, 'usuario': headerUser, 'senha': headerPass } = req.headers;
 
   // Validação dos headers de sistema
   if (headerUser !== SUPPLIER_SYNC_USER || headerPass !== SUPPLIER_SYNC_PASS) {
-      console.warn(`Tentativa de autenticação de fornecedor com headers de sistema inválidos.`);
       return res.status(401).json({ error: "Credenciais de sincronização de fornecedor inválidas nos headers." });
   }
 
@@ -175,19 +173,15 @@ app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
     const pool = await getDatabasePool(banco_dados);
     connection = await pool.getConnection();
 
-    console.log(`Autenticando usuário fornecedor: ${usuario} para o documento: ${cnpj_cpf}`);
-    
     // REMOVEMOS A MÁSCARA ANTES DE CONSULTAR O BANCO DE DADOS
     const documentoSemMascara = removeDocumentMask(cnpj_cpf);
-    console.log(`Documento CNPJ/CPF sem máscara para consulta: ${documentoSemMascara}`);
 
     const [rows] = await connection.execute(
       `SELECT Codigo, ID_Pessoa, Documento, Nome, usuario, Ativo FROM tb_Ambientes_Fornecedor WHERE Documento = ? AND usuario = ? AND Senha = ? AND Ativo = 'S'`,
-      [documentoSemMascara, usuario, senha] // USANDO O VALOR SEM MÁSCARA NA CONSULTA SQL
+      [documentoSemMascara, usuario, senha]
     );
 
     if (rows.length === 0) {
-      console.log(`Falha na autenticação do usuário fornecedor para CNPJ/CPF: ${cnpj_cpf} e Usuário: ${usuario}`);
       return res.status(401).json({ 
         success: false, 
         error: "Credenciais inválidas ou usuário inativo." 
@@ -195,7 +189,6 @@ app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
     }
 
     const usuarioERP = rows[0];
-    console.log(`Usuário autenticado: ${usuarioERP.Nome} (ID_Pessoa: ${usuarioERP.ID_Pessoa})`);
 
     res.status(200).json({
       success: true,
@@ -220,7 +213,6 @@ app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
   } finally {
     if (connection) {
       connection.release();
-      console.log('Conexão liberada após autenticação de usuário fornecedor.');
     }
   }
 });
@@ -229,8 +221,6 @@ app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
 // Rotas para ClienteApp (usando authenticateEnvironment)
 // Rota para enviar produtos do cliente
 app.get('/api/sync/send-produtos', authenticateEnvironment, async (req, res) => {
-  console.log('--- INICIANDO send-produtos ---');
-  
   try {
     if (!req.isClientAppAuth) {
       return res.status(403).json({ 
@@ -247,8 +237,6 @@ app.get('/api/sync/send-produtos', authenticateEnvironment, async (req, res) => 
     `;
 
     const [rows] = await req.pool.execute(query);
-    
-    console.log(`Produtos encontrados: ${rows.length}`);
     
     res.json({
       success: true,
@@ -267,8 +255,6 @@ app.get('/api/sync/send-produtos', authenticateEnvironment, async (req, res) => 
 
 // Rota para enviar clientes do cliente
 app.get('/api/sync/send-clientes', authenticateEnvironment, async (req, res) => {
-  console.log('--- INICIANDO send-clientes ---');
-  
   try {
     if (!req.isClientAppAuth) {
       return res.status(403).json({ 
@@ -285,8 +271,6 @@ app.get('/api/sync/send-clientes', authenticateEnvironment, async (req, res) => 
     `;
 
     const [rows] = await req.pool.execute(query);
-    
-    console.log(`Clientes encontrados: ${rows.length}`);
     
     res.json({
       success: true,
@@ -305,8 +289,6 @@ app.get('/api/sync/send-clientes', authenticateEnvironment, async (req, res) => 
 
 // Rota para enviar formas de pagamento do cliente
 app.get('/api/sync/send-formas-pagamento', authenticateEnvironment, async (req, res) => {
-  console.log('--- INICIANDO send-formas-pagamento ---');
-  
   try {
     if (!req.isClientAppAuth) {
       return res.status(403).json({ 
@@ -323,8 +305,6 @@ app.get('/api/sync/send-formas-pagamento', authenticateEnvironment, async (req, 
     `;
 
     const [rows] = await req.pool.execute(query);
-    
-    console.log(`Formas de pagamento encontradas: ${rows.length}`);
     
     res.json({
       success: true,
@@ -343,8 +323,6 @@ app.get('/api/sync/send-formas-pagamento', authenticateEnvironment, async (req, 
 
 // Rota para enviar comandas do cliente
 app.get('/api/sync/send-comandas', authenticateEnvironment, async (req, res) => {
-  console.log('--- INICIANDO send-comandas ---');
-  
   try {
     if (!req.isClientAppAuth) {
       return res.status(403).json({ 
@@ -361,8 +339,6 @@ app.get('/api/sync/send-comandas', authenticateEnvironment, async (req, res) => 
     `;
 
     const [rows] = await req.pool.execute(query);
-    
-    console.log(`Comandas encontradas: ${rows.length}`);
     
     res.json({
       success: true,
@@ -381,8 +357,6 @@ app.get('/api/sync/send-comandas', authenticateEnvironment, async (req, res) => 
 
 // Rota para receber pedidos do cliente
 app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) => {
-  console.log('--- INICIANDO receive-pedidos ---');
-  
   try {
     if (!req.isClientAppAuth) {
       return res.status(403).json({ 
@@ -391,7 +365,7 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
       });
     }
 
-    const { pedidos } = req.body; // Agora espera um array de pedidos
+    const { pedidos } = req.body;
 
     if (!Array.isArray(pedidos) || pedidos.length === 0) {
       return res.status(400).json({ error: 'Array de pedidos inválido ou vazio.' });
@@ -404,7 +378,6 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
       connection = await req.pool.getConnection();
       for (const pedido of pedidos) {
         await connection.beginTransaction();
-        console.log(`Processando pedido do cliente: id_pedido_mentorweb=${pedido.id_pedido_mentorweb}`);
 
         // 1. Inserir na tabela de pedidos
         const pedidoQuery = `
@@ -418,11 +391,10 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
           pedido.id_cliente,
           pedido.id_forma_pagamento,
           pedido.total_produtos,
-          pedido.id_lcto_erp || null, // Pode vir nulo
+          pedido.id_lcto_erp || null,
           pedido.status || 'pendente'
         ]);
         const newPedidoId = pedidoResult.insertId;
-        console.log(`Pedido mestre inserido com ID: ${newPedidoId}`);
 
         // 2. Inserir os produtos do pedido
         if (Array.isArray(pedido.itens) && pedido.itens.length > 0) {
@@ -438,16 +410,14 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
             item.quantidade,
             item.unitario,
             item.total_produto,
-            item.id_lcto_erp || null // Pode vir nulo
+            item.id_lcto_erp || null
           ]);
 
           await connection.query(produtoQuery, [produtosValues]);
-          console.log(`${pedido.itens.length} itens do pedido inseridos para o pedido ${newPedidoId}.`);
         }
 
         await connection.commit();
         insertedPedidos.push({ id_pedido_erp: newPedidoId, success: true });
-        console.log('Transação de pedido concluída com sucesso (commit).');
       }
       res.status(200).json({
         success: true,
@@ -459,7 +429,6 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
       console.error('Erro ao salvar pedidos do cliente:', error);
       if (connection) {
         await connection.rollback();
-        console.log('Rollback da transação executado.');
       }
       res.status(500).json({
         error: 'Erro interno do servidor ao processar os pedidos',
@@ -468,7 +437,6 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
     } finally {
       if (connection) {
         connection.release();
-        console.log('Conexão liberada.');
       }
     }
   } catch (error) {
@@ -484,8 +452,6 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
 // Rotas para Fornecedor (usando authenticateEnvironment)
 // Rota para enviar produtos do fornecedor
 app.get('/api/sync/send-produtos-fornecedor', authenticateEnvironment, async (req, res) => {
-  console.log('--- INICIANDO send-produtos-fornecedor ---');
-  
   try {
     if (!req.isSupplierAuth) {
       return res.status(403).json({ 
@@ -502,8 +468,6 @@ app.get('/api/sync/send-produtos-fornecedor', authenticateEnvironment, async (re
     `;
 
     const [rows] = await req.pool.execute(query);
-    
-    console.log(`Produtos de fornecedor encontrados: ${rows.length}`);
     
     res.json({
       success: true,
@@ -523,8 +487,6 @@ app.get('/api/sync/send-produtos-fornecedor', authenticateEnvironment, async (re
 
 // Rota para receber um pedido para o fornecedor
 app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (req, res) => {
-  console.log('--- INICIANDO receive-pedido-fornecedor ---');
-  
   if (!req.isSupplierAuth) {
     return res.status(403).json({ 
       error: 'Acesso negado', 
@@ -532,14 +494,13 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
     });
   }
 
-  const { id_ambiente, total_pedido, produtos, id_pedido_app, cliente } = req.body; // Adicionado 'cliente' no destructuring
+  const { id_ambiente, total_pedido, produtos, id_pedido_app, cliente } = req.body;
 
   if (!id_ambiente || total_pedido === undefined || !Array.isArray(produtos) || produtos.length === 0) {
     return res.status(400).json({ error: 'Dados do pedido inválidos ou incompletos.' });
   }
 
-  // Declara a variável data_pedido e atribui o valor atual
-  // Esta parte foi ajustada para salvar a data e hora no fuso horário local do servidor.
+  // A data e hora são geradas com base no fuso horário do servidor.
   const now = new Date();
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -552,13 +513,13 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
 
   let connection;
   try {
+    // A conexão é obtida do pool. O bloco 'finally' garante que ela será liberada,
+    // o que é essencial para evitar o esgotamento do pool.
     connection = await req.pool.getConnection();
+    // Inicia uma transação para garantir que o pedido e seus produtos sejam salvos atomicamente.
     await connection.beginTransaction();
-    console.log('Transação iniciada.');
 
     // 1. Inserir na tabela de pedidos (tb_Pedidos_Fornecedor)
-    // A query abaixo corresponde à estrutura da sua tabela:
-    // id, data_hora_lancamento, id_ambiente, valor_total, status, id_pedido_sistema_externo
     const pedidoQuery = `
       INSERT INTO tb_Pedidos_Fornecedor 
       (id_ambiente, valor_total, data_hora_lancamento, status, id_pedido_sistema_externo) 
@@ -567,11 +528,10 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
     const [pedidoResult] = await connection.execute(pedidoQuery, [
       id_ambiente, 
       total_pedido,
-      data_pedido, // Mapeia para data_hora_lancamento
-      id_pedido_app || null // Mapeia para id_pedido_sistema_externo (pode ser NULL se não houver ID do app)
+      data_pedido,
+      id_pedido_app || null
     ]);
     const newPedidoId = pedidoResult.insertId;
-    console.log(`Pedido mestre inserido com ID: ${newPedidoId}`);
 
     // 2. Inserir os produtos do pedido
     const produtoQuery = `
@@ -586,14 +546,14 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
       p.quantidade,
       p.valor_unitario,
       p.total_produto,
-      p.identificador_cliente_item // Novo campo
+      p.identificador_cliente_item
     ]);
 
     await connection.query(produtoQuery, [produtosValues]);
-    console.log(`${produtos.length} produtos do pedido inseridos.`);
 
+    // Confirma a transação. Se qualquer um dos passos acima falhar,
+    // o bloco catch fará o rollback.
     await connection.commit();
-    console.log('Transação concluída com sucesso (commit).');
 
     res.status(200).json({
       success: true,
@@ -604,8 +564,8 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
   } catch (error) {
     console.error('Erro ao salvar pedido do fornecedor:', error);
     if (connection) {
+      // Reverte todas as operações da transação em caso de erro.
       await connection.rollback();
-      console.log('Rollback da transação executado.');
     }
     res.status(500).json({
       error: 'Erro interno do servidor ao processar o pedido',
@@ -614,7 +574,6 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
   } finally {
     if (connection) {
       connection.release();
-      console.log('Conexão liberada.');
     }
   }
 });
