@@ -344,23 +344,40 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
 
 // Rota para produtos de fornecedor
 app.get('/api/sync/send-produtos-fornecedor', authenticateEnvironment, async (req, res) => {
+  // Log para verificar se a autenticação foi bem-sucedida
+  console.log(`[send-produtos-fornecedor] Status de autenticação do fornecedor: ${req.isSupplierAuth}`);
+
   if (!req.isSupplierAuth) {
     return res.status(403).json({ error: 'Acesso negado', details: 'Esta rota é exclusiva para sincronização de fornecedor.' });
   }
+
   let connection;
   try {
+    console.log('[send-produtos-fornecedor] Obtendo conexão com o banco de dados...');
     connection = await req.pool.getConnection();
-    const [rows] = await connection.execute(
-      'SELECT Codigo as id, Produto as nome, Preco_Venda as preco_unitario, Estoque as estoque, Ativo as ativo FROM tb_Produtos_Fornecedor WHERE Ativo = "S" ORDER BY Produto'
-    );
+    console.log('[send-produtos-fornecedor] Conexão obtida. Executando query...');
+
+    const query = 'SELECT Codigo as id, Produto as nome, Preco_Venda as preco_unitario, Estoque as estoque, Ativo as ativo FROM tb_Produtos_Fornecedor WHERE Ativo = "S" ORDER BY Produto';
+    console.log(`[send-produtos-fornecedor] Query: ${query}`);
+    
+    const [rows] = await connection.execute(query);
+    console.log(`[send-produtos-fornecedor] Query executada com sucesso. ${rows.length} produtos encontrados.`);
+    
     res.json({ success: true, produtos: rows, total: rows.length });
   } catch (error) {
-    console.error('Erro ao buscar produtos do fornecedor:', error);
-    // Aprimorando a mensagem de erro para debug
+    console.error('[send-produtos-fornecedor] Erro ao buscar produtos do fornecedor:', error);
     const errorMessage = error.sqlMessage || error.message;
-    res.status(500).json({ error: 'Erro interno do servidor', details: errorMessage });
+    // Retornando uma mensagem de erro mais clara para o frontend
+    res.status(500).json({ 
+      success: false, 
+      error: 'Erro no servidor ERP ao buscar produtos', 
+      details: errorMessage 
+    });
   } finally {
-    if (connection) connection.release();
+    if (connection) {
+      connection.release();
+      console.log('[send-produtos-fornecedor] Conexão com o banco de dados liberada.');
+    }
   }
 });
 
