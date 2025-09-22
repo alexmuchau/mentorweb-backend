@@ -373,7 +373,9 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
     });
   }
 
-  const { id_ambiente, total_pedido, produtos, data_pedido, cliente } = req.body;
+  // Removido 'cliente' da desestruturação, pois não é inserido diretamente na tabela.
+  // 'id_pedido_app' é o ID do pedido no MentorWeb (Base44), usado para referência externa.
+  const { id_ambiente, total_pedido, produtos, data_pedido, id_pedido_app } = req.body; 
 
   if (!id_ambiente || total_pedido === undefined || !Array.isArray(produtos) || produtos.length === 0) {
     return res.status(400).json({ error: 'Dados do pedido inválidos ou incompletos.' });
@@ -385,42 +387,51 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
     await connection.beginTransaction();
     console.log('Transação iniciada.');
 
-    // 1. Inserir na tabela de pedidos
+    // 1. Inserir na tabela de pedidos (tb_Pedidos_Fornecedor)
+    // A query abaixo corresponde à estrutura da sua tabela:
+    // id, data_hora_lancamento, id_ambiente, valor_total, status, id_pedido_sistema_externo
     const pedidoQuery = `
       INSERT INTO tb_Pedidos_Fornecedor 
-      (id_ambiente, valor_total, data_hora_lancamento, status) 
-      VALUES (?, ?, ?, 'pendente')
+      (id_ambiente, valor_total, data_hora_lancamento, status, id_pedido_sistema_externo) 
+      VALUES (?, ?, ?, 'pendente', ?)
     `;
     const [pedidoResult] = await connection.execute(pedidoQuery, [
       id_ambiente, 
       total_pedido,
-      data_pedido // Usando data_pedido do payload
+      data_pedido, // Mapeia para data_hora_lancamento
+      id_pedido_app || null // Mapeia para id_pedido_sistema_externo (pode ser NULL se não houver ID do app)
     ]);
     const newPedidoId = pedidoResult.insertId;
     console.log(`Pedido mestre inserido com ID: ${newPedidoId}`);
 
-    // 2. Inserir os produtos do pedido
+    // 2. Inserir os produtos do pedido (tb_Pedidos_Produtos_Fornecedor)
+    // A query abaixo corresponde à estrutura da sua tabela:
+    // id, id_pedido, id_produto, quantidade, preco_unitario, valor_total, identificador_cliente_item
     const produtoQuery = `
       INSERT INTO tb_Pedidos_Produtos_Fornecedor
       (id_pedido, id_produto, quantidade, preco_unitario, valor_total, identificador_cliente_item)
       VALUES ?
     `;
     
+    // Mapeia os produtos do payload para o formato da query
     const produtosValues = produtos.map(p => [
       newPedidoId,
       p.id_produto,
       p.quantidade,
       p.valor_unitario,
       p.total_produto,
-      p.identificador_cliente_item // Novo campo
+      p.identificador_cliente_item 
     ]);
 
+    // Executa a inserção em massa dos produtos
     await connection.query(produtoQuery, [produtosValues]);
     console.log(`${produtos.length} produtos do pedido inseridos.`);
 
+    // Confirma a transação
     await connection.commit();
     console.log('Transação concluída com sucesso (commit).');
 
+    // Retorna a resposta de sucesso
     res.status(200).json({
       success: true,
       message: 'Pedido recebido e salvo com sucesso',
@@ -429,15 +440,18 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
 
   } catch (error) {
     console.error('Erro ao salvar pedido do fornecedor:', error);
+    // Em caso de erro, faz rollback da transação
     if (connection) {
       await connection.rollback();
       console.log('Rollback da transação executado.');
     }
+    // Retorna erro interno do servidor
     res.status(500).json({
       error: 'Erro interno do servidor ao processar o pedido',
       details: error.message
     });
   } finally {
+    // Sempre libera a conexão
     if (connection) {
       connection.release();
       console.log('Conexão liberada.');
