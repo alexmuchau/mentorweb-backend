@@ -356,7 +356,9 @@ app.get('/api/sync/send-produtos-fornecedor', authenticateEnvironment, async (re
     res.json({ success: true, produtos: rows, total: rows.length });
   } catch (error) {
     console.error('Erro ao buscar produtos do fornecedor:', error);
-    res.status(500).json({ error: 'Erro interno do servidor', details: error.message });
+    // Aprimorando a mensagem de erro para debug
+    const errorMessage = error.sqlMessage || error.message;
+    res.status(500).json({ error: 'Erro interno do servidor', details: errorMessage });
   } finally {
     if (connection) connection.release();
   }
@@ -375,7 +377,7 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
 
   const { id_ambiente, total_pedido, produtos, data_pedido, id_pedido_app } = req.body; 
 
-  if (!id_ambiente || total_pedido === undefined || !Array.isArray(produtos) || produtos.length === 0) { // produtoss here is a typo, should be 'produtos'
+  if (!id_ambiente || total_pedido === undefined || !Array.isArray(produtos) || produtos.length === 0) {
     return res.status(400).json({ error: 'Dados do pedido inválidos ou incompletos.' });
   }
 
