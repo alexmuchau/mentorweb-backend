@@ -64,7 +64,7 @@ async function getDatabasePool(databaseName) {
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
     database: databaseName, // O banco de dados padrão para este pool
-    port: process.env.DB_PORT || 3306, // Adicionado porta, se aplicável
+    port: parseInt(process.env.DB_PORT || 3306), // Adicionado parseInt para garantir que a porta seja um número inteiro
     waitForConnections: true,
     connectionLimit: 10, // Ajuste conforme necessário
     queueLimit: 0
@@ -177,7 +177,7 @@ app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
 
     console.log(`Autenticando usuário fornecedor: ${usuario} para o documento: ${cnpj_cpf}`);
     
-    // AQUI REMOVEMOS A MÁSCARA ANTES DE CONSULTAR O BANCO DE DADOS
+    // REMOVEMOS A MÁSCARA ANTES DE CONSULTAR O BANCO DE DADOS
     const documentoSemMascara = removeDocumentMask(cnpj_cpf);
     console.log(`Documento CNPJ/CPF sem máscara para consulta: ${documentoSemMascara}`);
 
