@@ -538,8 +538,8 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
     // 1. Inserir na tabela de pedidos
     const pedidoQuery = `
       INSERT INTO tb_Pedidos_Fornecedor 
-      (id_ambiente, valor_total, data_hora_lancamento, status, id_pedido_sistema_externo, nome_cliente) 
-      VALUES (?, ?, NOW(), 'pendente', ?, ?)
+      (id_ambiente, valor_total, data_hora_lancamento, status, id_pedido_sistema_externo) 
+      VALUES (?, ?, NOW(), 'pendente', ?)
     `;
     const [pedidoResult] = await connection.execute(pedidoQuery, [
       id_ambiente, 
