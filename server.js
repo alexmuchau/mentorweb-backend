@@ -178,13 +178,12 @@ app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
 
     console.log(`Autenticando usuário fornecedor: ${usuario} para o documento: ${cnpj_cpf}`);
     
-    // AQUI REMOVEMOS A MÁSCARA ANTES DE CONSULTAR O BANCO DE DADOS
     const documentoSemMascara = removeDocumentMask(cnpj_cpf);
     console.log(`Documento CNPJ/CPF sem máscara para consulta: ${documentoSemMascara}`);
 
     const [rows] = await connection.execute(
       `SELECT Codigo, ID_Pessoa, Documento, Nome, usuario, Ativo FROM tb_Ambientes_Fornecedor WHERE Documento = ? AND usuario = ? AND Senha = ? AND Ativo = 'S'`,
-      [documentoSemMascara, usuario, senha] // USANDO O VALOR SEM MÁSCARA NA CONSULTA SQL
+      [documentoSemMascara, usuario, senha]
     );
 
     if (rows.length === 0) {
