@@ -346,7 +346,7 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
         valor_total,
         status,
         id_pedido_sistema_externo
-      ) VALUES (?, ?, ?, ?, ?)`;
+      ) VALUES (?, ?, ?, ?, NULL)`;
     
     const valuesPedido = [
       pedidoData.data_pedido,
