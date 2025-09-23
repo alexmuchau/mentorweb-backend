@@ -218,6 +218,109 @@ app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
 });
 
 
+// ROTA: Buscar produtos do fornecedor (chamada pelo erpSync action 'get_produtos_fornecedor')
+app.get('/api/sync/send-produtos-fornecedor', authenticateEnvironment, async (req, res) => {
+  // Apenas credenciais de sincronização de fornecedor podem usar esta rota
+  if (!req.isSupplierAuth) {
+    return res.status(403).json({ error: 'Acesso negado. Apenas sincronização de fornecedor pode buscar produtos.' });
+  }
+
+  const { banco_dados } = req.headers; // O banco de dados do fornecedor está nos headers
+
+  let connection;
+  try {
+    const pool = await getDatabasePool(banco_dados); // Usa o banco de dados do fornecedor
+    connection = await pool.getConnection();
+
+    // Consulta à tabela tb_Produtos_Fornecedor
+    const [rows] = await connection.execute(
+      `SELECT id, nome, preco_unitario, Ativo FROM tb_Produtos_Fornecedor WHERE Ativo = 'S'`
+    );
+
+    // Formatar preco_unitario para float se necessário
+    const produtos = rows.map(p => ({
+      ...p,
+      preco_unitario: parseFloat(p.preco_unitario) // Garante que seja um número
+    }));
+
+    res.json({
+      success: true,
+      produtos: produtos
+    });
+
+  } catch (error) {
+    console.error(`Erro ao buscar produtos do fornecedor (${banco_dados}):`, error);
+    res.status(500).json({
+      success: false,
+      error: 'Erro interno do servidor ao buscar produtos do fornecedor.',
+      details: error.message
+    });
+  } finally {
+    if (connection) connection.release();
+  }
+});
+
+// ROTA: Enviar pedido ao fornecedor (chamada pelo erpSync action 'send_pedido_fornecedor')
+app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (req, res) => {
+  // Apenas credenciais de sincronização de fornecedor podem usar esta rota
+  if (!req.isSupplierAuth) {
+    return res.status(403).json({ error: 'Acesso negado. Apenas sincronização de fornecedor pode enviar pedidos.' });
+  }
+
+  const { produtos, total_pedido, data_pedido, cliente } = req.body;
+  const { banco_dados } = req.headers; // O banco de dados do fornecedor está nos headers
+
+  if (!produtos || !Array.isArray(produtos) || produtos.length === 0 || !total_pedido || !data_pedido || !cliente) {
+    return res.status(400).json({ error: 'Dados do pedido incompletos ou inválidos.' });
+  }
+
+  let connection;
+  try {
+    const pool = await getDatabasePool(banco_dados); // Usa o banco de dados do fornecedor
+    connection = await pool.getConnection();
+
+    // Iniciar transação
+    await connection.beginTransaction();
+
+    // 1. Inserir o pedido principal na tabela de pedidos
+    const [pedidoResult] = await connection.execute(
+      `INSERT INTO tb_Pedidos_Fornecedor (data_pedido, total_pedido, cliente, status) VALUES (?, ?, ?, ?)`,
+      [new Date(data_pedido), total_pedido, cliente, 'pendente'] // Status inicial 'pendente'
+    );
+    const pedidoId = pedidoResult.insertId;
+
+    // 2. Inserir os itens do pedido na tabela de itens de pedido
+    for (const produto of produtos) {
+      await connection.execute(
+        `INSERT INTO tb_Pedidos_Fornecedor_Itens (pedido_id, id_produto, nome_produto, quantidade, valor_unitario, total_produto) VALUES (?, ?, ?, ?, ?, ?)`,
+        [pedidoId, produto.id_produto, produto.nome_produto, produto.quantidade, produto.valor_unitario, produto.total_produto]
+      );
+    }
+
+    // Comitar transação
+    await connection.commit();
+
+    res.json({
+      success: true,
+      message: 'Pedido recebido e salvo com sucesso.',
+      codigo_pedido: pedidoId // Retorna o ID do pedido no sistema do fornecedor
+    });
+
+  } catch (error) {
+    // Reverter transação em caso de erro
+    if (connection) await connection.rollback();
+    console.error(`Erro ao processar pedido para o fornecedor (${banco_dados}):`, error);
+    res.status(500).json({
+      success: false,
+      error: 'Erro interno do servidor ao processar o pedido.',
+      details: error.message
+    });
+  } finally {
+    if (connection) connection.release();
+  }
+});
+
+
 // Rotas para ClienteApp (usando authenticateEnvironment)
 // Rota para enviar produtos do cliente
 app.get('/api/sync/send-produtos', authenticateEnvironment, async (req, res) => {
@@ -448,136 +551,233 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
   }
 });
 
-
-// Rotas para Fornecedor (usando authenticateEnvironment)
-// Rota para enviar produtos do fornecedor
-app.get('/api/sync/send-produtos-fornecedor', authenticateEnvironment, async (req, res) => {
-  try {
-    if (!req.isSupplierAuth) {
-      return res.status(403).json({ 
-        error: 'Acesso negado', 
-        details: 'Esta rota requer autenticação de fornecedor.' 
-      });
-    }
-
-    const query = `
-      SELECT id, nome, preco_unitario, Ativo as ativo 
-      FROM tb_Produtos_Fornecedor 
-      WHERE Ativo = 'S'
-      ORDER BY nome
-    `;
-
-    const [rows] = await req.pool.execute(query);
-    
-    res.json({
-      success: true,
-      produtos: rows,
-      total: rows.length
-    });
-
-  } catch (error) {
-    console.error('Erro ao buscar produtos do fornecedor:', error);
-    res.status(500).json({
-      error: 'Erro interno do servidor',
-      details: error.message
-    });
-  }
-});
-
-
-// Rota para receber um pedido para o fornecedor
-app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (req, res) => {
-  if (!req.isSupplierAuth) {
-    return res.status(403).json({ 
-      error: 'Acesso negado', 
-      details: 'Esta rota requer autenticação de sincronização de fornecedor.' 
-    });
+// ROTA: Buscar lista de pedidos (chamada pelo erpSync action 'get_pedidos')
+app.get('/api/sync/send-pedidos-list', authenticateEnvironment, async (req, res) => {
+  if (!req.isClientAppAuth) {
+    return res.status(403).json({ error: 'Acesso negado. Apenas sincronização de cliente pode buscar pedidos.' });
   }
 
-  const { id_ambiente, total_pedido, produtos, id_pedido_app, cliente } = req.body;
-
-  if (!id_ambiente || total_pedido === undefined || !Array.isArray(produtos) || produtos.length === 0) {
-    return res.status(400).json({ error: 'Dados do pedido inválidos ou incompletos.' });
-  }
-
-  // A data e hora são geradas com base no fuso horário do servidor.
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  const hours = String(now.getHours()).padStart(2, '0');
-  const minutes = String(now.getMinutes()).padStart(2, '0');
-  const seconds = String(now.getSeconds()).padStart(2, '0');
-  const data_pedido = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-
+  const { banco_dados } = req.headers;
 
   let connection;
   try {
-    // A conexão é obtida do pool. O bloco 'finally' garante que ela será liberada,
-    // o que é essencial para evitar o esgotamento do pool.
-    connection = await req.pool.getConnection();
-    // Inicia uma transação para garantir que o pedido e seus produtos sejam salvos atomicamente.
-    await connection.beginTransaction();
+    const pool = await getDatabasePool(banco_dados);
+    connection = await pool.getConnection();
 
-    // 1. Inserir na tabela de pedidos (tb_Pedidos_Fornecedor)
-    const pedidoQuery = `
-      INSERT INTO tb_Pedidos_Fornecedor 
-      (id_ambiente, valor_total, data_hora_lancamento, status, id_pedido_sistema_externo) 
-      VALUES (?, ?, ?, 'pendente', ?)
-    `;
-    const [pedidoResult] = await connection.execute(pedidoQuery, [
-      id_ambiente, 
-      total_pedido,
-      data_pedido,
-      id_pedido_app || null
-    ]);
-    const newPedidoId = pedidoResult.insertId;
+    const [rows] = await connection.execute(`
+      SELECT
+        codigo,
+        data,
+        hora,
+        id_cliente,
+        id_forma_pagamento,
+        id_local_retirada,
+        total_produtos,
+        id_lcto_erp,
+        status
+      FROM tb_pedidos
+      ORDER BY data DESC, hora DESC
+    `);
 
-    // 2. Inserir os produtos do pedido
-    const produtoQuery = `
-      INSERT INTO tb_Pedidos_Produtos_Fornecedor
-      (id_pedido, id_produto, quantidade, preco_unitario, valor_total, identificador_cliente_item)
-      VALUES ?
-    `;
-    
-    const produtosValues = produtos.map(p => [
-      newPedidoId,
-      p.id_produto,
-      p.quantidade,
-      p.valor_unitario,
-      p.total_produto,
-      p.identificador_cliente_item
-    ]);
-
-    await connection.query(produtoQuery, [produtosValues]);
-
-    // Confirma a transação. Se qualquer um dos passos acima falhar,
-    // o bloco catch fará o rollback.
-    await connection.commit();
-
-    res.status(200).json({
+    res.json({
       success: true,
-      message: 'Pedido recebido e salvo com sucesso',
-      codigo_pedido: newPedidoId
+      pedidos: rows
     });
 
   } catch (error) {
-    console.error('Erro ao salvar pedido do fornecedor:', error);
-    if (connection) {
-      // Reverte todas as operações da transação em caso de erro.
-      await connection.rollback();
-    }
+    console.error(`Erro ao buscar pedidos do banco ${banco_dados}:`, error);
     res.status(500).json({
-      error: 'Erro interno do servidor ao processar o pedido',
+      success: false,
+      error: 'Erro interno do servidor ao buscar pedidos.',
       details: error.message
     });
   } finally {
-    if (connection) {
-      connection.release();
-    }
+    if (connection) connection.release();
   }
 });
 
+// ROTA: Buscar itens de um pedido específico (chamada pelo erpSync action 'get_itens_pedido')
+app.post('/api/sync/send-itens-pedido', authenticateEnvironment, async (req, res) => {
+  if (!req.isClientAppAuth) {
+    return res.status(403).json({ error: 'Acesso negado. Apenas sincronização de cliente pode buscar itens do pedido.' });
+  }
+
+  const { codigo_pedido } = req.body;
+  const { banco_dados } = req.headers;
+
+  if (!codigo_pedido) {
+    return res.status(400).json({ error: 'Código do pedido é obrigatório.' });
+  }
+
+  let connection;
+  try {
+    const pool = await getDatabasePool(banco_dados);
+    connection = await pool.getConnection();
+
+    const [rows] = await connection.execute(`
+      SELECT
+        pp.codigo,
+        pp.id_pedido,
+        pp.id_produto,
+        pp.quantidade,
+        pp.unitario,
+        pp.total_produto,
+        p.produto as nome_produto
+      FROM tb_pedidos_produtos pp
+      LEFT JOIN tb_produtos p ON pp.id_produto = p.codigo
+      WHERE pp.id_pedido = ?
+      ORDER BY pp.codigo
+    `, [codigo_pedido]);
+
+    res.json({
+      success: true,
+      itens: rows
+    });
+
+  } catch (error) {
+    console.error(`Erro ao buscar itens do pedido ${codigo_pedido} no banco ${banco_dados}:`, error);
+    res.status(500).json({
+      success: false,
+      error: 'Erro interno do servidor ao buscar itens do pedido.',
+      details: error.message
+    });
+  } finally {
+    if (connection) connection.release();
+  }
+});
+
+// ROTA: Buscar dados para analytics (chamada pelo erpSync action 'get_analytics')
+app.get('/api/sync/send-analytics', authenticateEnvironment, async (req, res) => {
+  if (!req.isClientAppAuth) {
+    return res.status(403).json({ error: 'Acesso negado. Apenas sincronização de cliente pode buscar analytics.' });
+  }
+
+  const { banco_dados } = req.headers;
+
+  let connection;
+  try {
+    const pool = await getDatabasePool(banco_dados);
+    connection = await pool.getConnection();
+
+    // Obter data atual e data do mês anterior
+    const agora = new Date();
+    const mesAtual = agora.getMonth() + 1;
+    const anoAtual = agora.getFullYear();
+    const mesAnterior = mesAtual === 1 ? 12 : mesAtual - 1;
+    const anoAnterior = mesAtual === 1 ? anoAtual - 1 : anoAtual;
+
+    // Vendas do mês atual
+    const [vendasMesAtual] = await connection.execute(`
+      SELECT COALESCE(SUM(total_produtos), 0) as total
+      FROM tb_pedidos
+      WHERE MONTH(data) = ? AND YEAR(data) = ?
+    `, [mesAtual, anoAtual]);
+
+    // Vendas do mês anterior
+    const [vendasMesAnterior] = await connection.execute(`
+      SELECT COALESCE(SUM(total_produtos), 0) as total
+      FROM tb_pedidos
+      WHERE MONTH(data) = ? AND YEAR(data) = ?
+    `, [mesAnterior, anoAnterior]);
+
+    // Pedidos do mês atual
+    const [pedidosMesAtual] = await connection.execute(`
+      SELECT COUNT(*) as total
+      FROM tb_pedidos
+      WHERE MONTH(data) = ? AND YEAR(data) = ?
+    `, [mesAtual, anoAtual]);
+
+    // Pedidos do mês anterior
+    const [pedidosMesAnterior] = await connection.execute(`
+      SELECT COUNT(*) as total
+      FROM tb_pedidos
+      WHERE MONTH(data) = ? AND YEAR(data) = ?
+    `, [mesAnterior, anoAnterior]);
+
+    // Total de clientes ativos
+    const [totalClientes] = await connection.execute(`
+      SELECT COUNT(*) as total
+      FROM tb_clientes
+      WHERE ativo = 'S'
+    `);
+
+    // Total de produtos ativos
+    const [totalProdutos] = await connection.execute(`
+      SELECT COUNT(*) as total
+      FROM tb_produtos
+      WHERE ativo = 'S'
+    `);
+
+    // Produtos mais vendidos (aproximação)
+    const [produtosMaisVendidos] = await connection.execute(`
+      SELECT 
+        p.codigo,
+        p.produto as nome,
+        COALESCE(SUM(pp.quantidade), 0) as vendas,
+        COALESCE(SUM(pp.total_produto), 0) as valor_total
+      FROM tb_produtos p
+      LEFT JOIN tb_pedidos_produtos pp ON p.codigo = pp.id_produto
+      LEFT JOIN tb_pedidos ped ON pp.id_pedido = ped.codigo
+      WHERE p.ativo = 'S' 
+        AND (ped.data IS NULL OR (MONTH(ped.data) = ? AND YEAR(ped.data) = ?))
+      GROUP BY p.codigo, p.produto
+      ORDER BY vendas DESC, valor_total DESC
+      LIMIT 5
+    `, [mesAtual, anoAtual]);
+
+    // Calcular crescimento
+    const totalVendasAtual = parseFloat(vendasMesAtual[0].total);
+    const totalVendasAnterior = parseFloat(vendasMesAnterior[0].total);
+    const crescimentoVendas = totalVendasAnterior > 0 ? 
+      ((totalVendasAtual - totalVendasAnterior) / totalVendasAnterior * 100) : 0;
+
+    const totalPedidosAtual = parseInt(pedidosMesAtual[0].total);
+    const totalPedidosAnterior = parseInt(pedidosMesAnterior[0].total);
+    const crescimentoPedidos = totalPedidosAnterior > 0 ? 
+      ((totalPedidosAtual - totalPedidosAnterior) / totalPedidosAnterior * 100) : 0;
+
+    const analytics = {
+      vendas: {
+        totalMes: totalVendasAtual,
+        totalMesAnterior: totalVendasAnterior,
+        crescimento: crescimentoVendas
+      },
+      pedidos: {
+        totalMes: totalPedidosAtual,
+        totalMesAnterior: totalPedidosAnterior,
+        crescimento: crescimentoPedidos
+      },
+      clientes: {
+        total: parseInt(totalClientes[0].total),
+        novosClientes: 0 // Você pode implementar lógica para novos clientes se necessário
+      },
+      produtos: {
+        total: parseInt(totalProdutos[0].total),
+        maisVendidos: produtosMaisVendidos.map(p => ({
+          codigo: p.codigo,
+          nome: p.nome,
+          vendas: parseInt(p.vendas),
+          valor_total: parseFloat(p.valor_total)
+        }))
+      }
+    };
+
+    res.json({
+      success: true,
+      analytics: analytics
+    });
+
+  } catch (error) {
+    console.error(`Erro ao buscar analytics do banco ${banco_dados}:`, error);
+    res.status(500).json({
+      success: false,
+      error: 'Erro interno do servidor ao buscar analytics.',
+      details: error.message
+    });
+  } finally {
+    if (connection) connection.release();
+  }
+});
 
 app.listen(PORT, () => {
   console.log(`Servidor ERP Sync rodando na porta ${PORT}`);
