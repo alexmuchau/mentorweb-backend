@@ -498,7 +498,7 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
         if (Array.isArray(pedido.itens) && pedido.itens.length > 0) {
           const produtoQuery = `
             INSERT INTO tb_pedidos_produtos
-            (id_pedido_erp, id_produto, quantidade, unitario, total_produto, id_lcto_erp)
+            (id_pedido, id_produto, quantidade, unitario, total_produto, id_lcto_erp)
             VALUES ?
           `;
           
@@ -515,7 +515,7 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
         }
 
         await connection.commit();
-        insertedPedidos.push({ id_pedido_erp: newPedidoId, success: true });
+        insertedPedidos.push({ id_pedido: newPedidoId, success: true });
       }
       res.status(200).json({
         success: true,
