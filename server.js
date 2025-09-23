@@ -291,61 +291,93 @@ app.post('/api/sync/send-pedido-fornecedor', authenticateEnvironment, async (req
   }
 });
 
-// ROTA: Receber pedido do fornecedor
+// ROTA: Receber pedido do fornecedor (chamada pelo erpSync action 'send_pedido_fornecedor')
+// SUBSTITUIÇÃO DA ROTA ANTERIOR
 app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (req, res) => {
+  // Esta rota deve aceitar apenas autenticação de fornecedor
   if (!req.isSupplierAuth) {
-    return res.status(403).json({ error: 'Acesso negado. Apenas sincronização de fornecedor.' });
+    return res.status(403).json({ error: 'Acesso negado. Apenas sincronização de fornecedor pode receber pedidos.' });
   }
 
   const { banco_dados } = req.headers;
   const pedidoData = req.body;
+
+  console.log('Recebendo pedido de fornecedor:', JSON.stringify(pedidoData, null, 2));
 
   let connection;
   try {
     const pool = await getDatabasePool(banco_dados);
     connection = await pool.getConnection();
 
+    // Iniciar transação
     await connection.beginTransaction();
 
-    const [result] = await connection.execute(`
-      INSERT INTO tb_pedidos_fornecedor (
-        data_pedido, cliente, total_pedido, id_ambiente, status
-      ) VALUES (?, ?, ?, ?, 'processado')
+    // 1. Inserir o pedido na tabela tb_Pedidos_Fornecedor (COM COLUNAS CORRIGIDAS)
+    const [pedidoResult] = await connection.execute(`
+      INSERT INTO tb_Pedidos_Fornecedor (
+        data_hora_lancamento,
+        id_ambiente,
+        valor_total,
+        status,
+        id_pedido_sistema_externo
+      ) VALUES (?, ?, ?, ?, ?)
     `, [
-      pedidoData.data_pedido,
-      pedidoData.cliente,
-      pedidoData.total_pedido,
-      pedidoData.id_ambiente
+      pedidoData.data_pedido,         // Mapeado para data_hora_lancamento
+      pedidoData.id_ambiente,         // Mapeado para id_ambiente
+      pedidoData.total_pedido,        // Mapeado para valor_total
+      'processado',                   // Status 'processado'
+      pedidoData.produtos[0]?.identificador_cliente_item || null // Mapeado para id_pedido_sistema_externo
     ]);
 
-    const pedidoId = result.insertId;
+    const pedidoId = pedidoResult.insertId;
 
+    // 2. Inserir os produtos do pedido
+    // Esta parte assume que a tabela de produtos do pedido existe e aceita estas colunas.
     for (const produto of pedidoData.produtos) {
       await connection.execute(`
         INSERT INTO tb_pedidos_fornecedor_produtos (
-          id_pedido_fornecedor, id_produto, quantidade, valor_unitario, total_produto
-        ) VALUES (?, ?, ?, ?, ?)
+          id_pedido_fornecedor,
+          id_produto,
+          quantidade,
+          valor_unitario,
+          total_produto,
+          identificador_cliente_item
+        ) VALUES (?, ?, ?, ?, ?, ?)
       `, [
         pedidoId,
         produto.id_produto,
         produto.quantidade,
         produto.valor_unitario,
-        produto.total_produto
+        produto.total_produto,
+        produto.identificador_cliente_item
       ]);
     }
 
+    // Commit da transação
     await connection.commit();
-    res.json({ success: true, codigo_pedido: pedidoId });
+
+    res.json({
+      success: true,
+      codigo_pedido: pedidoId,
+      message: 'Pedido recebido e processado com sucesso'
+    });
 
   } catch (error) {
-    if (connection) await connection.rollback();
-    console.error('Erro ao processar pedido:', error);
-    res.status(500).json({ success: false, error: 'Erro interno', details: error.message });
+    // Rollback em caso de erro
+    if (connection) {
+      await connection.rollback();
+    }
+    
+    console.error(`Erro ao processar pedido do fornecedor no banco ${banco_dados}:`, error);
+    res.status(500).json({
+      success: false,
+      error: 'Erro interno do servidor ao processar pedido do fornecedor.',
+      details: error.message
+    });
   } finally {
     if (connection) connection.release();
   }
 });
-
 
 // ROTA: Buscar produtos do fornecedor (chamada pelo erpSync action 'get_produtos_fornecedor')
 app.get('/api/sync/send-produtos-fornecedor', authenticateEnvironment, async (req, res) => {
