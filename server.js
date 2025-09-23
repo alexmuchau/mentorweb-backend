@@ -320,7 +320,7 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
         valor_total,
         status,
         id_pedido_sistema_externo
-      ) VALUES (?, ?, ?, ?, ?, NULL)
+      ) VALUES (?, ?, ?, ?, ?)
     `, [
       pedidoData.data_pedido,         // Mapeado para data_hora_lancamento
       pedidoData.id_ambiente,         // Mapeado para id_ambiente
@@ -342,7 +342,7 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
           preco_unitario,
           valor_total,
           identificador_cliente_item
-        ) VALUES (?, ?, ?, ?, ?, NULL)
+        ) VALUES (?, ?, ?, ?, ?, ?)
       `, [
         pedidoId,
         produto.id_produto,
