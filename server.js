@@ -268,7 +268,7 @@ app.post('/api/sync/send-pedido-fornecedor', authenticateEnvironment, async (req
       p.quantidade,
       p.valor_unitario,
       p.total_produto,
-      p.identificador_cliente_item || null
+      p.identificador_cliente_item
     ]);
 
     await connection.query(produtoQuery, [produtosValues]);
@@ -330,7 +330,7 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
       pedidoData.id_ambiente,           // Mapeado para id_ambiente
       pedidoData.total_pedido,          // Mapeado para valor_total
       'processado',                   // Status 'processado'
-      pedidoData.produtos[0]?.identificador_cliente_item || null // Mapeado para id_pedido_sistema_externo
+      pedidoData.produtos[0]?.identificador_cliente_item // Mapeado para id_pedido_sistema_externo
     ]);
 
     const pedidoId = pedidoResult.insertId;
