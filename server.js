@@ -267,10 +267,10 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
     return res.status(403).json({ error: 'Acesso negado. Apenas sincronização de fornecedor pode enviar pedidos.' });
   }
 
-  const { produtos, total_pedido, data_pedido, cliente } = req.body;
-  const { banco_dados } = req.headers; // O banco de dados do fornecedor está nos headers
+  const { produtos, total_pedido, data_pedido, cliente, id_pedido_app } = req.body;
+  const { banco_dados, 'id_ambiente_erp': id_ambiente } = req.headers; // O banco de dados do fornecedor está nos headers
 
-  if (!produtos || !Array.isArray(produtos) || produtos.length === 0 || !total_pedido || !data_pedido || !cliente) {
+  if (!produtos || !Array.isArray(produtos) || produtos.length === 0 || !total_pedido || !data_pedido || !cliente || !id_ambiente) {
     return res.status(400).json({ error: 'Dados do pedido incompletos ou inválidos.' });
   }
 
@@ -284,16 +284,16 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
 
     // 1. Inserir o pedido principal na tabela de pedidos
     const [pedidoResult] = await connection.execute(
-      `INSERT INTO tb_Pedidos_Fornecedor (data_pedido, total_pedido, cliente, status) VALUES (?, ?, ?, ?)`,
-      [new Date(data_pedido), total_pedido, cliente, 'pendente'] // Status inicial 'pendente'
+      `INSERT INTO tb_Pedidos_Fornecedor (id_ambiente, total_pedido, data_pedido, cliente, status, id_pedido_app) VALUES (?, ?, ?, ?, ?, ?)`,
+      [id_ambiente, total_pedido, new Date(data_pedido), cliente, 'pendente', id_pedido_app] // Status inicial 'pendente'
     );
     const pedidoId = pedidoResult.insertId;
 
     // 2. Inserir os itens do pedido na tabela de itens de pedido
     for (const produto of produtos) {
       await connection.execute(
-        `INSERT INTO tb_Pedidos_Fornecedor_Itens (pedido_id, id_produto, nome_produto, quantidade, valor_unitario, total_produto) VALUES (?, ?, ?, ?, ?, ?)`,
-        [pedidoId, produto.id_produto, produto.nome_produto, produto.quantidade, produto.valor_unitario, produto.total_produto]
+        `INSERT INTO tb_Pedidos_Produtos_Fornecedor (id_pedido, id_produto, quantidade, preco_unitario, valor_total) VALUES (?, ?, ?, ?, ?)`,
+        [pedidoId, produto.id_produto, produto.quantidade, produto.preco_unitario, produto.total_produto]
       );
     }
 
