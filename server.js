@@ -296,9 +296,9 @@ app.post('/api/sync/send-pedido-fornecedor', authenticateEnvironment, async (req
 });
 
 // ROTA: Receber pedido do fornecedor (chamada pelo erpSync action 'send_pedido_fornecedor')
-// SUBSTITUIÇÃO DA ROTA ANTERIOR
+// SUBSTITUA A ROTA EXISTENTE POR ESTA VERSÃO CORRIGIDA COM OS NOMES DE COLUNA EXATOS
 app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (req, res) => {
-  // Esta rota deve aceitar apenas autenticação de fornecedor
+  // Verificação de autenticação
   if (!req.isSupplierAuth) {
     return res.status(403).json({ error: 'Acesso negado. Apenas sincronização de fornecedor pode receber pedidos.' });
   }
@@ -306,7 +306,7 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
   const { banco_dados } = req.headers;
   const pedidoData = req.body;
 
-  console.log('Recebendo pedido de fornecedor:', JSON.stringify(pedidoData, null, 2));
+  console.log('Recebendo pedido de fornecedor para processar:', JSON.stringify(pedidoData, null, 2));
 
   let connection;
   try {
@@ -316,7 +316,8 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
     // Iniciar transação
     await connection.beginTransaction();
 
-    // 1. Inserir o pedido na tabela tb_Pedidos_Fornecedor (COM COLUNAS CORRIGIDAS)
+    // 1. Inserir o pedido na tabela tb_Pedidos_Fornecedor
+    // ATENÇÃO: Nomes de coluna ajustados conforme a Imagem 2
     const [pedidoResult] = await connection.execute(`
       INSERT INTO tb_Pedidos_Fornecedor (
         data_hora_lancamento,
@@ -326,38 +327,47 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
         id_pedido_sistema_externo
       ) VALUES (?, ?, ?, ?, ?)
     `, [
-      pedidoData.data_pedido,           // Mapeado para data_hora_lancamento
-      pedidoData.id_ambiente,           // Mapeado para id_ambiente
-      pedidoData.total_pedido,          // Mapeado para valor_total
-      'processado',                   // Status 'processado'
-      pedidoData.produtos[0]?.identificador_cliente_item // Mapeado para id_pedido_sistema_externo
+      pedidoData.data_pedido, // Mapeado para data_hora_lancamento
+      pedidoData.id_ambiente, // Mapeado para id_ambiente
+      pedidoData.total_pedido, // Mapeado para valor_total
+      'processado',            // Status 'processado'
+      // O campo 'identificador_cliente_item' (que vinha do frontend) será mapeado para 'id_pedido_sistema_externo'
+      // no pedido principal. É um VARCHAR no banco, então o valor do frontend deve ser uma string.
+      // Se for INT, pode ser problema se contiver letras.
+      pedidoData.produtos[0]?.identificador_cliente_item || null 
     ]);
 
     const pedidoId = pedidoResult.insertId;
+    console.log(`Pedido de fornecedor inserido com ID: ${pedidoId}`);
 
-    // 2. Inserir os produtos do pedido
-    // Esta parte assume que a tabela de produtos do pedido existe e aceita estas colunas.
+    // 2. Inserir os produtos do pedido na tabela tb_Pedidos_Produtos_Fornecedor
+    // ATENÇÃO: Nomes de coluna ajustados conforme a Imagem 1
     for (const produto of pedidoData.produtos) {
       await connection.execute(`
-        INSERT INTO tb_pedidos_fornecedor_produtos (
-          id_pedido,
+        INSERT INTO tb_Pedidos_Produtos_Fornecedor (
+          id_pedido,             -- Referencia o id do pedido principal (tb_Pedidos_Fornecedor)
           id_produto,
           quantidade,
-          preco_unitario,
-          valor_total,
+          preco_unitario,        -- Corrigido de 'valor_unitario' para 'preco_unitario'
+          valor_total,           -- Corrigido de 'total_produto' para 'valor_total'
           identificador_cliente_item
         ) VALUES (?, ?, ?, ?, ?, ?)
       `, [
         pedidoId,
         produto.id_produto,
         produto.quantidade,
-        produto.preco_unitario,
-        produto.valor_total,
-        produto.identificador_cliente_item
+        produto.valor_unitario, // No frontend estamos enviando 'valor_unitario'
+        produto.total_produto,  // No frontend estamos enviando 'total_produto'
+        // ATENÇÃO: o campo identificador_cliente_item na tabela de PRODUTOS é INT.
+        // Se o identificador enviado do frontend (que é string) contiver não-números,
+        // isso causará um erro de conversão.
+        // Se for sempre numérico, deve-se converter para INT:
+        parseInt(produto.identificador_cliente_item) || null 
       ]);
     }
+    console.log(`${pedidoData.produtos.length} produtos do pedido inseridos.`);
 
-    // Commit da transação
+    // Commit da transação se tudo deu certo
     await connection.commit();
 
     res.json({
@@ -370,6 +380,7 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
     // Rollback em caso de erro
     if (connection) {
       await connection.rollback();
+      console.log('Transação revertida (rollback) devido a erro.');
     }
     
     console.error(`Erro ao processar pedido do fornecedor no banco ${banco_dados}:`, error);
@@ -382,7 +393,6 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
     if (connection) connection.release();
   }
 });
-
 // ROTA: Buscar produtos do fornecedor (chamada pelo erpSync action 'get_produtos_fornecedor')
 app.get('/api/sync/send-produtos-fornecedor', authenticateEnvironment, async (req, res) => {
   // Apenas credenciais de sincronização de fornecedor podem usar esta rota
