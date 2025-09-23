@@ -295,81 +295,53 @@ app.post('/api/sync/send-pedido-fornecedor', authenticateEnvironment, async (req
   }
 });
 
-// ROTA: Receber pedido do fornecedor - VERSÃO COM LOGS DETALHADOS PARA DEBUG
+// ROTA: Receber pedido do fornecedor - VERSÃO FINAL CORRIGIDA
 app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (req, res) => {
-  console.log('=== INICIANDO PROCESSAMENTO DE PEDIDO FORNECEDOR ===');
-  console.log('Headers recebidos:', req.headers);
-  console.log('Flags de autenticação:', { 
-    isSupplierAuth: req.isSupplierAuth, 
-    isClientAuth: req.isClientAuth 
-  });
-
-  // Verificação de autenticação
   if (!req.isSupplierAuth) {
-    console.error('ERRO: Autenticação de fornecedor negada');
     return res.status(403).json({ 
-      error: 'Acesso negado. Apenas sincronização de fornecedor pode receber pedidos.',
-      debug: { isSupplierAuth: req.isSupplierAuth, isClientAuth: req.isClientAuth }
+      error: 'Acesso negado. Apenas sincronização de fornecedor pode receber pedidos.'
     });
   }
 
   const { banco_dados } = req.headers;
   const pedidoData = req.body;
 
-  console.log('Banco de dados:', banco_dados);
-  console.log('Dados do pedido recebidos:', JSON.stringify(pedidoData, null, 2));
-
-  if (!banco_dados) {
-    console.error('ERRO: banco_dados não fornecido');
-    return res.status(400).json({ error: 'Header banco_dados é obrigatório.' });
-  }
+  console.log('Processando pedido de fornecedor:', JSON.stringify(pedidoData, null, 2));
 
   let connection;
   try {
-    console.log('Obtendo pool de conexão...');
     const pool = await getDatabasePool(banco_dados);
-    console.log('Pool obtido com sucesso');
-    
     connection = await pool.getConnection();
-    console.log('Conexão obtida com sucesso');
-
-    // Iniciar transação
-    console.log('Iniciando transação...');
     await connection.beginTransaction();
 
-    // 1. Inserir o pedido na tabela tb_Pedidos_Fornecedor
-    console.log('Inserindo pedido principal...');
-    const sqlPedido = `
+    // 1. Inserir pedido principal - SEM id_pedido_sistema_externo (ERP vai preencher)
+    const [pedidoResult] = await connection.execute(`
       INSERT INTO tb_Pedidos_Fornecedor (
         data_hora_lancamento,
         id_ambiente,
         valor_total,
-        status,
-        id_pedido_sistema_externo
-      ) VALUES (?, ?, ?, ?, ?)`;
-    
-    const valuesPedido = [
+        status
+      ) VALUES (?, ?, ?, ?)
+    `, [
       pedidoData.data_pedido,
       pedidoData.id_ambiente,
       pedidoData.total_pedido,
-      'processado',
-      pedidoData.produtos[0]?.identificador_cliente_item || null
-    ];
-    
-    console.log('SQL do pedido:', sqlPedido);
-    console.log('Valores do pedido:', valuesPedido);
+      'pendente'  // Status padrão = 'pendente'
+    ]);
 
-    const [pedidoResult] = await connection.execute(sqlPedido, valuesPedido);
     const pedidoId = pedidoResult.insertId;
-    console.log(`✓ Pedido inserido com ID: ${pedidoId}`);
+    console.log(`Pedido inserido com ID: ${pedidoId}`);
 
-    // 2. Inserir os produtos do pedido
-    console.log(`Inserindo ${pedidoData.produtos.length} produtos...`);
-    for (let i = 0; i < pedidoData.produtos.length; i++) {
-      const produto = pedidoData.produtos[i];
-      console.log(`Inserindo produto ${i + 1}/${pedidoData.produtos.length}:`, produto);
+    // 2. Inserir produtos do pedido
+    for (const produto of pedidoData.produtos) {
+      // Converter identificador_cliente_item para INT (só números)
+      let identificadorInt = null;
+      if (produto.identificador_cliente_item) {
+        const numeroExtraido = String(produto.identificador_cliente_item).replace(/\D/g, '');
+        identificadorInt = numeroExtraido ? parseInt(numeroExtraido) : null;
+      }
       
-      const sqlProduto = `
+      await connection.execute(`
         INSERT INTO tb_Pedidos_Produtos_Fornecedor (
           id_pedido,
           id_produto,
@@ -377,47 +349,38 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
           preco_unitario,
           valor_total,
           identificador_cliente_item
-        ) VALUES (?, ?, ?, ?, ?, ?)`;
-      
-      // Conversão do identificador_cliente_item para INT
-      let identificadorInt = null;
-      if (produto.identificador_cliente_item) {
-        if (typeof produto.identificador_cliente_item === 'string') {
-          // Tentar extrair apenas números da string
-          const numeroExtraido = produto.identificador_cliente_item.replace(/\D/g, '');
-          identificadorInt = numeroExtraido ? parseInt(numeroExtraido) : null;
-        } else {
-          identificadorInt = parseInt(produto.identificador_cliente_item);
-        }
-      }
-      
-      const valuesProduto = [
+        ) VALUES (?, ?, ?, ?, ?, ?)
+      `, [
         pedidoId,
         produto.id_produto,
         produto.quantidade,
         produto.valor_unitario,
         produto.total_produto,
         identificadorInt
-      ];
-      
-      console.log(`SQL produto ${i + 1}:`, sqlProduto);
-      console.log(`Valores produto ${i + 1}:`, valuesProduto);
-      
-      await connection.execute(sqlProduto, valuesProduto);
-      console.log(`✓ Produto ${i + 1} inserido com sucesso`);
+      ]);
     }
 
-    // Commit da transação
-    console.log('Fazendo commit da transação...');
     await connection.commit();
-    console.log('✓ Transação commitada com sucesso');
+    console.log(`Pedido ${pedidoId} processado com sucesso`);
 
-    console.log('=== PEDIDO PROCESSADO COM SUCESSO ===');
     res.json({
       success: true,
       codigo_pedido: pedidoId,
       message: 'Pedido recebido e processado com sucesso'
     });
+
+  } catch (error) {
+    if (connection) await connection.rollback();
+    console.error('Erro ao processar pedido:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Erro interno do servidor',
+      details: error.message
+    });
+  } finally {
+    if (connection) connection.release();
+  }
+});
 
   } catch (error) {
     console.error('❌ ERRO DURANTE PROCESSAMENTO:');
