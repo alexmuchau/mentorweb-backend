@@ -336,19 +336,19 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
     for (const produto of pedidoData.produtos) {
       await connection.execute(`
         INSERT INTO tb_pedidos_fornecedor_produtos (
-          id_pedido_fornecedor,
+          id_pedido,
           id_produto,
           quantidade,
-          valor_unitario,
-          total_produto,
+          preco_unitario,
+          valor_total,
           identificador_cliente_item
         ) VALUES (?, ?, ?, ?, ?, ?)
       `, [
         pedidoId,
         produto.id_produto,
         produto.quantidade,
-        produto.valor_unitario,
-        produto.total_produto,
+        produto.preco_unitario,
+        produto.valor_total,
         produto.identificador_cliente_item
       ]);
     }
