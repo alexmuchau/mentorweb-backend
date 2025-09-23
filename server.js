@@ -382,38 +382,6 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
   }
 });
 
-  } catch (error) {
-    console.error('❌ ERRO DURANTE PROCESSAMENTO:');
-    console.error('Erro completo:', error);
-    console.error('Message:', error.message);
-    console.error('Stack:', error.stack);
-    
-    // Rollback em caso de erro
-    if (connection) {
-      try {
-        await connection.rollback();
-        console.log('Rollback executado');
-      } catch (rollbackError) {
-        console.error('Erro durante rollback:', rollbackError);
-      }
-    }
-    
-    res.status(500).json({
-      success: false,
-      error: 'Erro interno do servidor ao processar pedido do fornecedor.',
-      details: error.message,
-      sqlState: error.sqlState,
-      errno: error.errno,
-      code: error.code
-    });
-  } finally {
-    if (connection) {
-      connection.release();
-      console.log('Conexão liberada');
-    }
-  }
-});
-
 // ROTA: Buscar produtos do fornecedor (chamada pelo erpSync action 'get_produtos_fornecedor')
 app.get('/api/sync/send-produtos-fornecedor', authenticateEnvironment, async (req, res) => {
   // Apenas credenciais de sincronização de fornecedor podem usar esta rota
