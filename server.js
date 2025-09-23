@@ -295,7 +295,7 @@ app.post('/api/sync/send-pedido-fornecedor', authenticateEnvironment, async (req
   }
 });
 
-// ROTA: Receber pedido do fornecedor - VERSÃO FINAL CORRIGIDA
+// ROTA: Receber pedido do fornecedor - VERSÃO COM FUSO HORÁRIO E CAMPOS CORRIGIDOS
 app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (req, res) => {
   if (!req.isSupplierAuth) {
     return res.status(403).json({ 
@@ -314,7 +314,11 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
     connection = await pool.getConnection();
     await connection.beginTransaction();
 
-    // 1. Inserir pedido principal - SEM id_pedido_sistema_externo (ERP vai preencher)
+    // Converte a data do pedido para o fuso de São Paulo no formato do MySQL
+    const dataPedidoCliente = new Date(pedidoData.data_pedido);
+    const dataFormatada = dataPedidoCliente.toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }).slice(0, 19);
+
+    // 1. Inserir pedido principal SEM id_pedido_sistema_externo
     const [pedidoResult] = await connection.execute(`
       INSERT INTO tb_Pedidos_Fornecedor (
         data_hora_lancamento,
@@ -323,7 +327,7 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
         status
       ) VALUES (?, ?, ?, ?)
     `, [
-      pedidoData.data_pedido,
+      dataFormatada,
       pedidoData.id_ambiente,
       pedidoData.total_pedido,
       'pendente'  // Status padrão = 'pendente'
@@ -334,11 +338,11 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
 
     // 2. Inserir produtos do pedido
     for (const produto of pedidoData.produtos) {
-      // Converter identificador_cliente_item para INT (só números)
+																	 
       let identificadorInt = null;
       if (produto.identificador_cliente_item) {
         const numeroExtraido = String(produto.identificador_cliente_item).replace(/\D/g, '');
-        identificadorInt = numeroExtraido ? parseInt(numeroExtraido) : null;
+        identificadorInt = numeroExtraido ? parseInt(numeroExtraido, 10) : null;
       }
       
       await connection.execute(`
@@ -381,7 +385,6 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
     if (connection) connection.release();
   }
 });
-
 // ROTA: Buscar produtos do fornecedor (chamada pelo erpSync action 'get_produtos_fornecedor')
 app.get('/api/sync/send-produtos-fornecedor', authenticateEnvironment, async (req, res) => {
   // Apenas credenciais de sincronização de fornecedor podem usar esta rota
