@@ -260,61 +260,56 @@ app.get('/api/sync/send-produtos-fornecedor', authenticateEnvironment, async (re
   }
 });
 
-// ROTA: Enviar pedido ao fornecedor (chamada pelo erpSync action 'send_pedido_fornecedor')
+// ROTA: Receber pedido do fornecedor
 app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (req, res) => {
-  // Apenas credenciais de sincronização de fornecedor podem usar esta rota
-  if (!req.isSupplierAuth) {
-    return res.status(403).json({ error: 'Acesso negado. Apenas sincronização de fornecedor pode enviar pedidos.' });
+  if (!req.isFornecedorAuth) {
+    return res.status(403).json({ error: 'Acesso negado. Apenas sincronização de fornecedor.' });
   }
 
-  const { produtos, total_pedido, data_pedido, cliente, id_pedido_app } = req.body;
-  const { banco_dados, 'id_ambiente_erp': id_ambiente } = req.headers; // O banco de dados do fornecedor está nos headers
-
-  if (!produtos || !Array.isArray(produtos) || produtos.length === 0 || !total_pedido || !data_pedido || !cliente || !id_ambiente) {
-    return res.status(400).json({ error: 'Dados do pedido incompletos ou inválidos.' });
-  }
+  const { banco_dados } = req.headers;
+  const pedidoData = req.body;
 
   let connection;
   try {
-    const pool = await getDatabasePool(banco_dados); // Usa o banco de dados do fornecedor
+    const pool = await getDatabasePool(banco_dados);
     connection = await pool.getConnection();
 
-    // Iniciar transação
     await connection.beginTransaction();
 
-    // 1. Inserir o pedido principal na tabela de pedidos
-    const [pedidoResult] = await connection.execute(
-      `INSERT INTO tb_Pedidos_Fornecedor (id_ambiente, total_pedido, data_pedido, cliente, status, id_pedido_app) VALUES (?, ?, ?, ?, ?, ?)`,
-      [id_ambiente, total_pedido, new Date(data_pedido), cliente, 'pendente', id_pedido_app] // Status inicial 'pendente'
-    );
-    const pedidoId = pedidoResult.insertId;
+    const [result] = await connection.execute(`
+      INSERT INTO tb_pedidos_fornecedor (
+        data_pedido, cliente, total_pedido, id_ambiente, status
+      ) VALUES (?, ?, ?, ?, 'processado')
+    `, [
+      pedidoData.data_pedido,
+      pedidoData.cliente,
+      pedidoData.total_pedido,
+      pedidoData.id_ambiente
+    ]);
 
-    // 2. Inserir os itens do pedido na tabela de itens de pedido
-    for (const produto of produtos) {
-      await connection.execute(
-        `INSERT INTO tb_Pedidos_Produtos_Fornecedor (id_pedido, id_produto, quantidade, preco_unitario, valor_total) VALUES (?, ?, ?, ?, ?)`,
-        [pedidoId, produto.id_produto, produto.quantidade, produto.preco_unitario, produto.total_produto]
-      );
+    const pedidoId = result.insertId;
+
+    for (const produto of pedidoData.produtos) {
+      await connection.execute(`
+        INSERT INTO tb_pedidos_fornecedor_produtos (
+          id_pedido_fornecedor, id_produto, quantidade, valor_unitario, total_produto
+        ) VALUES (?, ?, ?, ?, ?)
+      `, [
+        pedidoId,
+        produto.id_produto,
+        produto.quantidade,
+        produto.valor_unitario,
+        produto.total_produto
+      ]);
     }
 
-    // Comitar transação
     await connection.commit();
-
-    res.json({
-      success: true,
-      message: 'Pedido recebido e salvo com sucesso.',
-      codigo_pedido: pedidoId // Retorna o ID do pedido no sistema do fornecedor
-    });
+    res.json({ success: true, codigo_pedido: pedidoId });
 
   } catch (error) {
-    // Reverter transação em caso de erro
     if (connection) await connection.rollback();
-    console.error(`Erro ao processar pedido para o fornecedor (${banco_dados}):`, error);
-    res.status(500).json({
-      success: false,
-      error: 'Erro interno do servidor ao processar o pedido.',
-      details: error.message
-    });
+    console.error('Erro ao processar pedido:', error);
+    res.status(500).json({ success: false, error: 'Erro interno', details: error.message });
   } finally {
     if (connection) connection.release();
   }
@@ -563,6 +558,10 @@ app.get('/api/sync/send-pedidos-list', authenticateEnvironment, async (req, res)
   try {
     const pool = await getDatabasePool(banco_dados);
     connection = await pool.getConnection();
+								
+																  
+		 
+	 
 
     const [rows] = await connection.execute(`
       SELECT
@@ -579,8 +578,11 @@ app.get('/api/sync/send-pedidos-list', authenticateEnvironment, async (req, res)
       ORDER BY data DESC, hora DESC
     `);
 
+												 
+	
     res.json({
       success: true,
+					 
       pedidos: rows
     });
 
@@ -606,7 +608,12 @@ app.post('/api/sync/send-itens-pedido', authenticateEnvironment, async (req, res
   const { banco_dados } = req.headers;
 
   if (!codigo_pedido) {
+																							  
+							
     return res.status(400).json({ error: 'Código do pedido é obrigatório.' });
+							  
+																				   
+	   
   }
 
   let connection;
@@ -650,6 +657,10 @@ app.post('/api/sync/send-itens-pedido', authenticateEnvironment, async (req, res
 app.get('/api/sync/send-analytics', authenticateEnvironment, async (req, res) => {
   if (!req.isClientAppAuth) {
     return res.status(403).json({ error: 'Acesso negado. Apenas sincronização de cliente pode buscar analytics.' });
+													 
+														
+															
+															
   }
 
   const { banco_dados } = req.headers;
@@ -657,7 +668,10 @@ app.get('/api/sync/send-analytics', authenticateEnvironment, async (req, res) =>
   let connection;
   try {
     const pool = await getDatabasePool(banco_dados);
+															
     connection = await pool.getConnection();
+																								   
+										
 
     // Obter data atual e data do mês anterior
     const agora = new Date();
@@ -665,6 +679,13 @@ app.get('/api/sync/send-analytics', authenticateEnvironment, async (req, res) =>
     const anoAtual = agora.getFullYear();
     const mesAnterior = mesAtual === 1 ? 12 : mesAtual - 1;
     const anoAnterior = mesAtual === 1 ? anoAtual - 1 : anoAtual;
+																  
+				   
+				   
+				  
+						   
+	   
+											  
 
     // Vendas do mês atual
     const [vendasMesAtual] = await connection.execute(`
@@ -672,6 +693,15 @@ app.get('/api/sync/send-analytics', authenticateEnvironment, async (req, res) =>
       FROM tb_pedidos
       WHERE MONTH(data) = ? AND YEAR(data) = ?
     `, [mesAtual, anoAtual]);
+	
+											  
+				  
+				   
+				   
+					   
+					  
+								  
+	   
 
     // Vendas do mês anterior
     const [vendasMesAnterior] = await connection.execute(`
@@ -765,19 +795,27 @@ app.get('/api/sync/send-analytics', authenticateEnvironment, async (req, res) =>
     res.json({
       success: true,
       analytics: analytics
+								
     });
 
   } catch (error) {
     console.error(`Erro ao buscar analytics do banco ${banco_dados}:`, error);
+					 
+																	 
+								  
+	 
     res.status(500).json({
       success: false,
       error: 'Erro interno do servidor ao buscar analytics.',
       details: error.message
     });
   } finally {
+					 
     if (connection) connection.release();
+	 
   }
 });
+
 
 app.listen(PORT, () => {
   console.log(`Servidor ERP Sync rodando na porta ${PORT}`);
