@@ -99,7 +99,7 @@ const authenticateEnvironment = async (req, res, next) => {
   const { cnpj, usuario, senha, banco_dados } = req.headers;
 
   // Inicializa req.pool e flags
-  req.pool = null; 
+  req.pool = null;  
   req.isClientAppAuth = false;
   req.isSupplierAuth = false;
   req.environment = null;
@@ -108,9 +108,10 @@ const authenticateEnvironment = async (req, res, next) => {
     return res.status(400).json({ error: 'Credenciais de ambiente incompletas', details: 'Headers CNPJ, Usuário, Senha e Banco de Dados são obrigatórios.' });
   }
 
+  let connection;
   try {
     // Tenta obter o pool para o banco_dados.
-    req.pool = await getDatabasePool(banco_dados); 
+    req.pool = await getDatabasePool(banco_dados);  
 
     // CASO 1: Autenticação para Fornecedor (credenciais de sistema)
     if (usuario === SUPPLIER_SYNC_USER && senha === SUPPLIER_SYNC_PASS) {
@@ -121,7 +122,8 @@ const authenticateEnvironment = async (req, res, next) => {
     }
     
     // CASO 2: Autenticação para ClienteApp (credenciais do ambiente do cliente)
-    const [rows] = await req.pool.execute(
+    connection = await req.pool.getConnection();
+    const [rows] = await connection.execute(
       'SELECT * FROM tb_ambientes WHERE cnpj = ? AND usuario = ? AND senha = ? AND ativo = "S"',
       [cnpj, usuario, senha]
     );
@@ -142,10 +144,12 @@ const authenticateEnvironment = async (req, res, next) => {
     if (error.message && error.message.includes('Não foi possível conectar ao banco de dados')) {
         return res.status(401).json({ error: 'Falha na conexão com o banco de dados do ambiente.', details: error.message });
     }
-    if (error.sqlMessage) { 
+    if (error.sqlMessage) {  
         return res.status(500).json({ error: 'Erro no banco de dados', details: error.sqlMessage });
     }
     return res.status(500).json({ error: 'Erro interno do servidor', details: error.message });
+  } finally {
+    if (connection) connection.release();
   }
 };
 
@@ -182,9 +186,9 @@ app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
     );
 
     if (rows.length === 0) {
-      return res.status(401).json({ 
-        success: false, 
-        error: "Credenciais inválidas ou usuário inativo." 
+      return res.status(401).json({  
+        success: false,  
+        error: "Credenciais inválidas ou usuário inativo."  
       });
     }
 
@@ -322,9 +326,9 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
         id_pedido_sistema_externo
       ) VALUES (?, ?, ?, ?, ?)
     `, [
-      pedidoData.data_pedido,         // Mapeado para data_hora_lancamento
-      pedidoData.id_ambiente,         // Mapeado para id_ambiente
-      pedidoData.total_pedido,        // Mapeado para valor_total
+      pedidoData.data_pedido,           // Mapeado para data_hora_lancamento
+      pedidoData.id_ambiente,           // Mapeado para id_ambiente
+      pedidoData.total_pedido,          // Mapeado para valor_total
       'processado',                   // Status 'processado'
       pedidoData.produtos[0]?.identificador_cliente_item || null // Mapeado para id_pedido_sistema_externo
     ]);
@@ -426,27 +430,32 @@ app.get('/api/sync/send-produtos-fornecedor', authenticateEnvironment, async (re
 app.get('/api/sync/send-produtos', authenticateEnvironment, async (req, res) => {
   try {
     if (!req.isClientAppAuth) {
-      return res.status(403).json({ 
-        error: 'Acesso negado', 
-        details: 'Esta rota requer autenticação de ClienteApp.' 
+      return res.status(403).json({  
+        error: 'Acesso negado',  
+        details: 'Esta rota requer autenticação de ClienteApp.'  
       });
     }
 
-    const query = `
-      SELECT codigo, produto, codigo_barras, preco_venda, estoque, ativo 
-      FROM tb_produtos 
-      WHERE ativo = 'S'
-      ORDER BY produto
-    `;
+    let connection;
+    try {
+      connection = await req.pool.getConnection();
+      const query = `
+        SELECT codigo, produto, codigo_barras, preco_venda, estoque, ativo  
+        FROM tb_produtos  
+        WHERE ativo = 'S'
+        ORDER BY produto
+      `;
 
-    const [rows] = await req.pool.execute(query);
-    
-    res.json({
-      success: true,
-      produtos: rows,
-      total: rows.length
-    });
-
+      const [rows] = await connection.execute(query);
+      
+      res.json({
+        success: true,
+        produtos: rows,
+        total: rows.length
+      });
+    } finally {
+      if (connection) connection.release();
+    }
   } catch (error) {
     console.error('Erro ao buscar produtos do cliente:', error);
     res.status(500).json({
@@ -460,27 +469,32 @@ app.get('/api/sync/send-produtos', authenticateEnvironment, async (req, res) => 
 app.get('/api/sync/send-clientes', authenticateEnvironment, async (req, res) => {
   try {
     if (!req.isClientAppAuth) {
-      return res.status(403).json({ 
-        error: 'Acesso negado', 
-        details: 'Esta rota requer autenticação de ClienteApp.' 
+      return res.status(403).json({  
+        error: 'Acesso negado',  
+        details: 'Esta rota requer autenticação de ClienteApp.'  
       });
     }
 
-    const query = `
-      SELECT codigo, nome, cnpj, cpf, ativo 
-      FROM tb_clientes 
-      WHERE ativo = 'S'
-      ORDER BY nome
-    `;
+    let connection;
+    try {
+      connection = await req.pool.getConnection();
+      const query = `
+        SELECT codigo, nome, cnpj, cpf, ativo  
+        FROM tb_clientes  
+        WHERE ativo = 'S'
+        ORDER BY nome
+      `;
 
-    const [rows] = await req.pool.execute(query);
-    
-    res.json({
-      success: true,
-      clientes: rows,
-      total: rows.length
-    });
-
+      const [rows] = await connection.execute(query);
+      
+      res.json({
+        success: true,
+        clientes: rows,
+        total: rows.length
+      });
+    } finally {
+      if (connection) connection.release();
+    }
   } catch (error) {
     console.error('Erro ao buscar clientes do cliente:', error);
     res.status(500).json({
@@ -494,27 +508,32 @@ app.get('/api/sync/send-clientes', authenticateEnvironment, async (req, res) => 
 app.get('/api/sync/send-formas-pagamento', authenticateEnvironment, async (req, res) => {
   try {
     if (!req.isClientAppAuth) {
-      return res.status(403).json({ 
-        error: 'Acesso negado', 
-        details: 'Esta rota requer autenticação de ClienteApp.' 
+      return res.status(403).json({  
+        error: 'Acesso negado',  
+        details: 'Esta rota requer autenticação de ClienteApp.'  
       });
     }
 
-    const query = `
-      SELECT codigo, forma_pagamento, ativo 
-      FROM tb_formas_pagamento 
-      WHERE ativo = 'S'
-      ORDER BY forma_pagamento
-    `;
+    let connection;
+    try {
+      connection = await req.pool.getConnection();
+      const query = `
+        SELECT codigo, forma_pagamento, ativo  
+        FROM tb_formas_pagamento  
+        WHERE ativo = 'S'
+        ORDER BY forma_pagamento
+      `;
 
-    const [rows] = await req.pool.execute(query);
-    
-    res.json({
-      success: true,
-      formas: rows,
-      total: rows.length
-    });
-
+      const [rows] = await connection.execute(query);
+      
+      res.json({
+        success: true,
+        formas: rows,
+        total: rows.length
+      });
+    } finally {
+      if (connection) connection.release();
+    }
   } catch (error) {
     console.error('Erro ao buscar formas de pagamento do cliente:', error);
     res.status(500).json({
@@ -528,27 +547,32 @@ app.get('/api/sync/send-formas-pagamento', authenticateEnvironment, async (req, 
 app.get('/api/sync/send-comandas', authenticateEnvironment, async (req, res) => {
   try {
     if (!req.isClientAppAuth) {
-      return res.status(403).json({ 
-        error: 'Acesso negado', 
-        details: 'Esta rota requer autenticação de ClienteApp.' 
+      return res.status(403).json({  
+        error: 'Acesso negado',  
+        details: 'Esta rota requer autenticação de ClienteApp.'  
       });
     }
 
-    const query = `
-      SELECT codigo, comanda, ativo 
-      FROM tb_comandas 
-      WHERE ativo = 'S'
-      ORDER BY comanda
-    `;
+    let connection;
+    try {
+      connection = await req.pool.getConnection();
+      const query = `
+        SELECT codigo, comanda, ativo  
+        FROM tb_comandas  
+        WHERE ativo = 'S'
+        ORDER BY comanda
+      `;
 
-    const [rows] = await req.pool.execute(query);
-    
-    res.json({
-      success: true,
-      comandas: rows,
-      total: rows.length
-    });
-
+      const [rows] = await connection.execute(query);
+      
+      res.json({
+        success: true,
+        comandas: rows,
+        total: rows.length
+      });
+    } finally {
+      if (connection) connection.release();
+    }
   } catch (error) {
     console.error('Erro ao buscar comandas do cliente:', error);
     res.status(500).json({
@@ -562,9 +586,9 @@ app.get('/api/sync/send-comandas', authenticateEnvironment, async (req, res) => 
 app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) => {
   try {
     if (!req.isClientAppAuth) {
-      return res.status(403).json({ 
-        error: 'Acesso negado', 
-        details: 'Esta rota requer autenticação de ClienteApp.' 
+      return res.status(403).json({  
+        error: 'Acesso negado',  
+        details: 'Esta rota requer autenticação de ClienteApp.'  
       });
     }
 
@@ -584,8 +608,8 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
 
         // 1. Inserir na tabela de pedidos
         const pedidoQuery = `
-          INSERT INTO tb_pedidos 
-          (data, hora, id_cliente, id_forma_pagamento, total_produtos, id_lcto_erp, status) 
+          INSERT INTO tb_pedidos  
+          (data, hora, id_cliente, id_forma_pagamento, total_produtos, id_lcto_erp, status)  
           VALUES (?, ?, ?, ?, ?, ?, ?)
         `;
         const [pedidoResult] = await connection.execute(pedidoQuery, [
@@ -603,7 +627,7 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
         if (Array.isArray(pedido.itens) && pedido.itens.length > 0) {
           const produtoQuery = `
             INSERT INTO tb_pedidos_produtos
-            (id_pedido_erp, id_produto, quantidade, unitario, total_produto, id_lcto_erp)
+            (id_pedido, id_produto, quantidade, unitario, total_produto, id_lcto_erp)
             VALUES ?
           `;
           
@@ -620,7 +644,7 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
         }
 
         await connection.commit();
-        insertedPedidos.push({ id_pedido_erp: newPedidoId, success: true });
+        insertedPedidos.push({ id_pedido: newPedidoId, success: true });
       }
       res.status(200).json({
         success: true,
@@ -810,7 +834,7 @@ app.get('/api/sync/send-analytics', authenticateEnvironment, async (req, res) =>
 
     // Produtos mais vendidos (aproximação)
     const [produtosMaisVendidos] = await connection.execute(`
-      SELECT 
+      SELECT
         p.codigo,
         p.produto as nome,
         COALESCE(SUM(pp.quantidade), 0) as vendas,
@@ -818,7 +842,7 @@ app.get('/api/sync/send-analytics', authenticateEnvironment, async (req, res) =>
       FROM tb_produtos p
       LEFT JOIN tb_pedidos_produtos pp ON p.codigo = pp.id_produto
       LEFT JOIN tb_pedidos ped ON pp.id_pedido = ped.codigo
-      WHERE p.ativo = 'S' 
+      WHERE p.ativo = 'S'
         AND (ped.data IS NULL OR (MONTH(ped.data) = ? AND YEAR(ped.data) = ?))
       GROUP BY p.codigo, p.produto
       ORDER BY vendas DESC, valor_total DESC
@@ -828,12 +852,12 @@ app.get('/api/sync/send-analytics', authenticateEnvironment, async (req, res) =>
     // Calcular crescimento
     const totalVendasAtual = parseFloat(vendasMesAtual[0].total);
     const totalVendasAnterior = parseFloat(vendasMesAnterior[0].total);
-    const crescimentoVendas = totalVendasAnterior > 0 ? 
+    const crescimentoVendas = totalVendasAnterior > 0 ?
       ((totalVendasAtual - totalVendasAnterior) / totalVendasAnterior * 100) : 0;
 
     const totalPedidosAtual = parseInt(pedidosMesAtual[0].total);
     const totalPedidosAnterior = parseInt(pedidosMesAnterior[0].total);
-    const crescimentoPedidos = totalPedidosAnterior > 0 ? 
+    const crescimentoPedidos = totalPedidosAnterior > 0 ?
       ((totalPedidosAtual - totalPedidosAnterior) / totalPedidosAnterior * 100) : 0;
 
     const analytics = {
