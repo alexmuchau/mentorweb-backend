@@ -268,7 +268,7 @@ app.post('/api/sync/send-pedido-fornecedor', authenticateEnvironment, async (req
       p.quantidade,
       p.valor_unitario,
       p.total_produto,
-      p.identificador_cliente_item
+      p.identificador_cliente_item || null
     ]);
 
     await connection.query(produtoQuery, [produtosValues]);
