@@ -511,6 +511,62 @@ app.post('/api/erp/inativar-usuario-fornecedor', async (req, res) => {
   }
 });
 
+// === ROTA: Buscar ambientes do fornecedor ===
+app.get('/api/sync/send-ambientes-fornecedor', async (req, res) => {
+  console.log('🌳 REQUISIÇÃO PARA BUSCAR AMBIENTES DO FORNECEDOR');
+  
+  const banco_dados = req.headers['banco_dados'];
+  const cnpj = req.headers['cnpj'];
+  const headerUser = req.headers['usuario'];
+  const headerPass = req.headers['senha'];
+
+  console.log('📋 DADOS RECEBIDOS:');
+  console.log(`   - Banco de dados: ${banco_dados}`);
+  console.log(`   - CNPJ: ${cnpj}`);
+  console.log(`   - Header Usuario: ${headerUser}`);
+
+  // Validação das credenciais
+  if (headerUser !== 'mentorweb_fornecedor' || headerPass !== 'mentorweb_sync_forn_2024') {
+    console.warn('❌ CREDENCIAIS DE SISTEMA INVÁLIDAS');
+    return res.status(401).json({ error: "Credenciais de sincronização inválidas." });
+  }
+
+  if (!banco_dados) {
+    return res.status(400).json({ error: 'Banco de dados não especificado no header.' });
+  }
+
+  let connection;
+  try {
+    console.log(`🔌 CONECTANDO AO BANCO: ${banco_dados}`);
+    const pool = await getDatabasePool(banco_dados);
+    connection = await pool.getConnection();
+    
+    const [rows] = await connection.execute(
+      `SELECT Codigo as id, Nome as nome, ID_Pessoa, Documento FROM tb_Ambientes_Fornecedor WHERE Ativo = 'S' ORDER BY Nome`
+    );
+    
+    console.log(`🌳 Ambientes encontrados: ${rows.length}`);
+    
+    res.json({
+      success: true,
+      ambientes: rows
+    });
+
+  } catch (error) {
+    console.error('❌ ERRO AO BUSCAR AMBIENTES:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Erro ao buscar ambientes no ERP do fornecedor.', 
+      details: error.message 
+    });
+  } finally {
+    if (connection) {
+      connection.release();
+      console.log('🔌 Conexão liberada para busca de ambientes');
+    }
+  }
+});
+
 // Rota para enviar produtos do cliente
 app.get('/api/sync/send-produtos', authenticateEnvironment, async (req, res) => {
   try {
