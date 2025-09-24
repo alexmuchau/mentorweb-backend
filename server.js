@@ -386,90 +386,57 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
   }
 });
 
-// ====== NOVA ROTA: Receber pedido de CLIENTE para FORNECEDOR (Pedidos Fornecedor Integrado) ======
+// NOVA ROTA: Receber pedido de CLIENTE para FORNECEDOR (Versão com inserção idêntica à primeira rota)
 app.post('/api/sync/receive-pedido-cliente-fornecedor', authenticateEnvironment, async (req, res) => {
-  console.log('--- INICIANDO receive-pedido-cliente-fornecedor ---');
-
-  // Apenas credenciais de sincronização de CLIENTE podem usar esta rota
-  // (req.isClientAuth deve ser definido pelo middleware authenticateMentorWebSync)
-  if (!req.isClientAuth) {
-    console.warn('❌ Acesso negado. Apenas sincronização de cliente pode enviar pedidos por esta rota.');
-    return res.status(403).json({ 
-      success: false,
-      error: 'Acesso negado. Credenciais de sincronização de cliente são necessárias.' 
-    });
-  }
-
-  const banco_dados_fornecedor = req.headers['banco_dados']; // Banco de dados do FORNECEDOR
-  const cnpj_fornecedor = req.headers['cnpj']; // CNPJ do FORNECEDOR
+  const { banco_dados } = req.headers;
   const pedidoData = req.body;
 
-  console.log(`📋 Dados do pedido recebidos de cliente para fornecedor ${cnpj_fornecedor} no banco ${banco_dados_fornecedor}:`);
-  console.log(JSON.stringify(pedidoData, null, 2));
+  const {
+    id_ambiente,
+    total_pedido,
+    produtos,
+    data_pedido
+  } = pedidoData;
 
-  // Validação básica dos dados do pedido
-  if (
-    !pedidoData.id_ambiente || 
-    pedidoData.total_pedido === undefined || 
-    !Array.isArray(pedidoData.produtos) || 
-    pedidoData.produtos.length === 0 ||
-    !pedidoData.identificador_cliente_item // Campo obrigatório
-  ) {
-    console.warn('❌ DADOS DO PEDIDO INVÁLIDOS OU INCOMPLETOS.');
-    return res.status(400).json({ 
-      success: false, 
-      error: 'Dados do pedido inválidos ou incompletos.',
-      details: 'id_ambiente, total_pedido, produtos (array não vazio) e identificador_cliente_item são obrigatórios.'
-    });
+  // Validação básica dos campos
+  if (!banco_dados || !id_ambiente || !total_pedido || !produtos || !data_pedido) {
+    return res.status(400).json({ error: 'Dados obrigatórios ausentes.' });
   }
-  
-  // Garantir que identificador_cliente_item não é nulo/vazio
-  if (!pedidoData.identificador_cliente_item.trim()) {
-      console.warn('❌ identificador_cliente_item não pode ser vazio.');
-      return res.status(400).json({ 
-          success: false, 
-          error: 'Identificador do cliente não pode ser vazio.' 
-      });
-  }
+
+  console.log('Processando pedido de cliente para fornecedor:', JSON.stringify(pedidoData, null, 2));
 
   let connection;
   try {
-    console.log(`🔌 Conectando ao banco de dados do fornecedor: ${banco_dados_fornecedor}`);
-    const pool = await getDatabasePool(banco_dados_fornecedor); // Supondo que getDatabasePool esteja definido
+    const pool = await getDatabasePool(banco_dados);
     connection = await pool.getConnection();
     await connection.beginTransaction();
 
-    // Converte a data do pedido para o fuso de São Paulo no formato do MySQL
-    const dataPedidoCliente = new Date(pedidoData.data_pedido);
+    // 1. Converte a data do pedido para o fuso de São Paulo no formato do MySQL
+    const dataPedidoCliente = new Date(data_pedido);
     const dataFormatada = dataPedidoCliente.toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }).slice(0, 19);
 
-    // 1. Inserir pedido principal
+    // 2. Inserir pedido principal, exatamente como na primeira rota
     const [pedidoResult] = await connection.execute(`
       INSERT INTO tb_Pedidos_Fornecedor (
         data_hora_lancamento,
         id_ambiente,
         valor_total,
-        identificador_cliente_item,  // Incluindo o identificador aqui
         status
-      ) VALUES (?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?)
     `, [
       dataFormatada,
-      pedidoData.id_ambiente,
-      pedidoData.total_pedido,
-      pedidoData.identificador_cliente_item, // Valor do identificador
-      'pendente'  // Status padrão = 'pendente'
+      id_ambiente,
+      total_pedido,
+      'pendente' // Status padrão = 'pendente'
     ]);
 
     const pedidoId = pedidoResult.insertId;
-    console.log(`✅ Pedido inserido com ID: ${pedidoId}`);
+    console.log(`Pedido inserido com ID: ${pedidoId}`);
 
-    // 2. Inserir produtos do pedido
-    for (const produto of pedidoData.produtos) {
-      // O campo identificador_cliente_item já vem no pedidoData principal,
-      // então não precisamos dele em cada produto, a menos que a sua tabela
-      // tb_Pedidos_Produtos_Fornecedor o exija individualmente.
-      // Assumindo que identificador_cliente_item é do pedido principal.
-
+    // 3. Inserir produtos do pedido
+    for (const produto of produtos) {
+      // O campo 'identificador_cliente_item' do produto é ignorado aqui
+      // pois não existe na tabela 'tb_Pedidos_Produtos_Fornecedor' na primeira versão.
       await connection.execute(`
         INSERT INTO tb_Pedidos_Produtos_Fornecedor (
           id_pedido,
@@ -488,30 +455,24 @@ app.post('/api/sync/receive-pedido-cliente-fornecedor', authenticateEnvironment,
     }
 
     await connection.commit();
-    console.log(`🎉 Pedido ${pedidoId} processado e salvo com sucesso no ERP do fornecedor.`);
+    console.log(`Pedido ${pedidoId} processado com sucesso`);
 
     res.json({
       success: true,
       codigo_pedido: pedidoId,
-      message: 'Pedido recebido e processado com sucesso pelo fornecedor.'
+      message: 'Pedido recebido e processado com sucesso'
     });
 
   } catch (error) {
-    if (connection) {
-      await connection.rollback();
-      console.log('🔄 Rollback da transação devido a erro.');
-    }
-    console.error('❌ ERRO AO PROCESSAR PEDIDO DE CLIENTE PARA FORNECEDOR:', error);
+    if (connection) await connection.rollback();
+    console.error('Erro ao processar pedido de cliente para fornecedor:', error);
     res.status(500).json({
       success: false,
-      error: 'Erro interno do servidor ao processar o pedido do cliente para o fornecedor.',
+      error: 'Erro interno ao processar pedido.',
       details: error.message
     });
   } finally {
-    if (connection) {
-      connection.release();
-      console.log('🔌 Conexão liberada do pool.');
-    }
+    if (connection) connection.release();
   }
 });
 
