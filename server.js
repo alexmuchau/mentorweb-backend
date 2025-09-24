@@ -462,7 +462,7 @@ app.post('/api/sync/receive-pedido-cliente-fornecedor', authenticateEnvironment,
         produto.quantidade,
         produto.valor_unitario,
         produto.total_produto,
-        identificadorInt // Valor corrigido
+        valorParaInserir // Valor corrigido
       ]);
     }
 
