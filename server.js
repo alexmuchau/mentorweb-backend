@@ -567,6 +567,65 @@ app.get('/api/sync/send-ambientes-fornecedor', async (req, res) => {
   }
 });
 
+// === NOVA ROTA: Buscar produtos do fornecedor PARA UM CLIENTE ESPECÍFICO ===
+// Recebe o ID do ambiente do cliente para que o ERP possa aplicar preços/catálogos específicos.
+app.post('/api/sync/send-produtos-fornecedor-para-cliente', async (req, res) => {
+  console.log('📦 REQUISIÇÃO PARA BUSCAR PRODUTOS DO FORNECEDOR PARA UM CLIENTE');
+  
+  const { id_ambiente_fornecedor } = req.body; // ID do cliente no ERP do fornecedor
+  const banco_dados = req.headers['banco_dados'];
+  const cnpj_fornecedor = req.headers['cnpj'];
+
+  console.log('📋 DADOS RECEBIDOS:');
+  console.log(`   - Banco de dados: ${banco_dados}`);
+  console.log(`   - CNPJ do Fornecedor: ${cnpj_fornecedor}`);
+  console.log(`   - ID do Ambiente do Cliente: ${id_ambiente_fornecedor}`);
+
+  if (!banco_dados || !id_ambiente_fornecedor) {
+    return res.status(400).json({ error: 'Banco de dados e id_ambiente_fornecedor são obrigatórios.' });
+  }
+
+  let connection;
+  try {
+    const pool = await getDatabasePool(banco_dados);
+    connection = await pool.getConnection();
+    
+    // NOTA: Esta query é um exemplo. No futuro, você pode adicionar JOINS aqui
+    // com tabelas de preço por cliente, usando o 'id_ambiente_fornecedor' para filtrar.
+    // Por enquanto, ela retorna a lista padrão de produtos.
+    const [rows] = await connection.execute(
+      `SELECT 
+        codigo as id, 
+        produto as nome, 
+        codigo_barras as codigo, 
+        COALESCE(preco_venda, 0) as preco,
+        COALESCE(estoque, 0) as estoque
+      FROM tb_produtos 
+      WHERE ativo = 'S' 
+      ORDER BY produto`
+    );
+    
+    console.log(`📦 Produtos encontrados para o cliente (ambiente ${id_ambiente_fornecedor}): ${rows.length}`);
+    
+    res.json({
+      success: true,
+      produtos: rows
+    });
+
+  } catch (error) {
+    console.error('❌ ERRO AO BUSCAR PRODUTOS PARA O CLIENTE:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Erro ao buscar produtos para o cliente no ERP.', 
+      details: error.message 
+    });
+  } finally {
+    if (connection) {
+      connection.release();
+    }
+  }
+});
+
 // Rota para enviar produtos do cliente
 app.get('/api/sync/send-produtos', authenticateEnvironment, async (req, res) => {
   try {
