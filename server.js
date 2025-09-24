@@ -623,6 +623,8 @@ app.post('/api/sync/send-produtos-fornecedor-para-cliente', authenticateMentorWe
     if (connection) connection.release();
   }
 });
+
+
 // Rota para enviar produtos do cliente
 app.get('/api/sync/send-produtos', authenticateEnvironment, async (req, res) => {
   try {
