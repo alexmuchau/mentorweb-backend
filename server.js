@@ -386,7 +386,7 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
   }
 });
 
-// NOVA ROTA: Receber pedido de CLIENTE para FORNECEDOR (Versão com inserção idêntica à primeira rota)
+// NOVA ROTA: Receber pedido de CLIENTE para FORNECEDOR
 app.post('/api/sync/receive-pedido-cliente-fornecedor', authenticateEnvironment, async (req, res) => {
   const { banco_dados } = req.headers;
   const pedidoData = req.body;
@@ -395,10 +395,11 @@ app.post('/api/sync/receive-pedido-cliente-fornecedor', authenticateEnvironment,
     id_ambiente,
     total_pedido,
     produtos,
-    data_pedido
+    data_pedido,
+    id_pedido_sistema_externo,
+    cliente
   } = pedidoData;
 
-  // Validação básica dos campos
   if (!banco_dados || !id_ambiente || !total_pedido || !produtos || !data_pedido) {
     return res.status(400).json({ error: 'Dados obrigatórios ausentes.' });
   }
@@ -411,46 +412,57 @@ app.post('/api/sync/receive-pedido-cliente-fornecedor', authenticateEnvironment,
     connection = await pool.getConnection();
     await connection.beginTransaction();
 
-    // 1. Converte a data do pedido para o fuso de São Paulo no formato do MySQL
     const dataPedidoCliente = new Date(data_pedido);
     const dataFormatada = dataPedidoCliente.toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }).slice(0, 19);
 
-    // 2. Inserir pedido principal, exatamente como na primeira rota
     const [pedidoResult] = await connection.execute(`
       INSERT INTO tb_Pedidos_Fornecedor (
         data_hora_lancamento,
         id_ambiente,
         valor_total,
+        id_pedido_sistema_externo,
+        cliente_origem_nome,
         status
-      ) VALUES (?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?)
     `, [
       dataFormatada,
       id_ambiente,
       total_pedido,
-      'pendente' // Status padrão = 'pendente'
+      id_pedido_sistema_externo,
+      cliente,
+      'pendente'
     ]);
 
     const pedidoId = pedidoResult.insertId;
     console.log(`Pedido inserido com ID: ${pedidoId}`);
 
-    // 3. Inserir produtos do pedido
+    // Correção: Garanta que o campo `identificador_cliente_item` seja preenchido
     for (const produto of produtos) {
-      // O campo 'identificador_cliente_item' do produto é ignorado aqui
-      // pois não existe na tabela 'tb_Pedidos_Produtos_Fornecedor' na primeira versão.
+      // Extrai o identificador ou define um valor padrão se não existir
+      let identificadorInt = null;
+      if (produto.identificador_cliente_item) {
+        const numeroExtraido = String(produto.identificador_cliente_item).replace(/\D/g, '');
+        identificadorInt = numeroExtraido ? parseInt(numeroExtraido, 10) : null;
+      }
+      
+      const valorParaInserir = identificadorInt || 0; // Use 0 se o valor for nulo
+
       await connection.execute(`
         INSERT INTO tb_Pedidos_Produtos_Fornecedor (
           id_pedido,
           id_produto,
           quantidade,
           preco_unitario,
-          valor_total
-        ) VALUES (?, ?, ?, ?, ?)
+          valor_total,
+          identificador_cliente_item  
+        ) VALUES (?, ?, ?, ?, ?, ?)
       `, [
         pedidoId,
         produto.id_produto,
         produto.quantidade,
         produto.valor_unitario,
-        produto.total_produto
+        produto.total_produto,
+        valorParaInserir // Valor corrigido
       ]);
     }
 
