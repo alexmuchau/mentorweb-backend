@@ -568,14 +568,20 @@ app.get('/api/sync/send-ambientes-fornecedor', async (req, res) => {
 });
 
 // ROTA: Buscar produtos do fornecedor PARA UM CLIENTE ESPECÍFICO (Pedidos Fornecedor Integrado)
-app.post('/api/sync/send-produtos-fornecedor-para-cliente', authenticateMentorWebSync, async (req, res) => {
-  if (!req.isSupplierAuth) { // Esta rota também é chamada com credenciais de fornecedor
-    return res.status(403).json({ error: 'Acesso negado. Credenciais de sincronização de fornecedor são necessárias.' });
+																								   
+app.post('/api/sync/send-produtos-fornecedor-para-cliente', async (req, res) => {
+  //if (!req.isSupplierAuth) { // Esta rota também é chamada com credenciais de fornecedor
+  //  return res.status(403).json({ error: 'Acesso negado. Credenciais de sincronização de fornecedor são necessárias.' });
   }
 
   const { id_ambiente_fornecedor } = req.body; // ID do ambiente do cliente no ERP do fornecedor
   const banco_dados = req.headers['banco_dados'];
   console.log(`📦 REQUISIÇÃO PARA BUSCAR PRODUTOS DO FORNECEDOR PARA O CLIENTE (ambiente: ${id_ambiente_fornecedor}) do banco: ${banco_dados}`);
+
+									   
+													 
+															 
+																		   
 
   if (!banco_dados || !id_ambiente_fornecedor) {
     return res.status(400).json({ error: 'Banco de dados e id_ambiente_fornecedor são obrigatórios.' });
@@ -593,6 +599,7 @@ app.post('/api/sync/send-produtos-fornecedor-para-cliente', authenticateMentorWe
       `SELECT 
         id, 
         nome, 
+								 
         preco_unitario, 
         COALESCE(estoque, 0) as estoque
       FROM tb_Produtos_Fornecedor 
@@ -620,48 +627,11 @@ app.post('/api/sync/send-produtos-fornecedor-para-cliente', authenticateMentorWe
       details: error.message 
     });
   } finally {
+					 
     if (connection) connection.release();
+	 
   }
 });
-// Rota para enviar produtos do cliente
-app.get('/api/sync/send-produtos', authenticateEnvironment, async (req, res) => {
-  try {
-    if (!req.isClientAppAuth) {
-      return res.status(403).json({  
-        error: 'Acesso negado',  
-        details: 'Esta rota requer autenticação de ClienteApp.'  
-      });
-    }
-
-    let connection;
-    try {
-      connection = await req.pool.getConnection();
-      const query = `
-        SELECT codigo, produto, codigo_barras, preco_venda, estoque, ativo  
-        FROM tb_produtos  
-        WHERE ativo = 'S'
-        ORDER BY produto
-      `;
-
-      const [rows] = await connection.execute(query);
-      
-      res.json({
-        success: true,
-        produtos: rows,
-        total: rows.length
-      });
-    } finally {
-      if (connection) connection.release();
-    }
-  } catch (error) {
-    console.error('Erro ao buscar produtos do cliente:', error);
-    res.status(500).json({
-      error: 'Erro interno do servidor',
-      details: error.message
-    });
-  }
-});
-
 // Rota para enviar clientes do cliente
 app.get('/api/sync/send-clientes', authenticateEnvironment, async (req, res) => {
   try {
