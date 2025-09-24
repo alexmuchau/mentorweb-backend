@@ -387,7 +387,7 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
 });
 
 // ====== NOVA ROTA: Receber pedido de CLIENTE para FORNECEDOR (Pedidos Fornecedor Integrado) ======
-app.post('/api/sync/receive-pedido-cliente-fornecedor', authenticateMentorWebSync, async (req, res) => {
+app.post('/api/sync/receive-pedido-cliente-fornecedor', authenticateEnvironment, async (req, res) => {
   console.log('--- INICIANDO receive-pedido-cliente-fornecedor ---');
 
   // Apenas credenciais de sincronização de CLIENTE podem usar esta rota
