@@ -427,6 +427,89 @@ app.get('/api/sync/send-produtos-fornecedor', authenticateEnvironment, async (re
   }
 });
 
+// --- ROTA DE ADMINISTRAÇÃO PARA INATIVAR USUÁRIO FORNECEDOR ---
+// Este endpoint é destinado a ser chamado por um processo administrativo da MentorWeb
+// (como o Painel DEV ou o módulo de Configurações da Empresa ERP) para gerenciar
+// o status de usuários no ERP de um fornecedor.
+app.post('/api/erp/inativar-usuario-fornecedor', async (req, res) => {
+  console.log('🔒 INICIANDO PROCESSO DE INATIVAÇÃO DE USUÁRIO FORNECEDOR');
+
+  // Credenciais de sistema para esta rota, se necessário.
+  // IMPORTANTE: Ajuste estas credenciais para algo seguro e específico do seu ambiente.
+  const SYSTEM_ADMIN_USER = 'admin_sistema';
+  const SYSTEM_ADMIN_PASS = 'admin_inativar_2024';
+
+  const body = req.body;
+  const { cnpj_cpf, usuario, motivo } = body;
+  const banco_dados = req.headers['banco_dados'];
+  const headerUser = req.headers['usuario'];
+  const headerPass = req.headers['senha'];
+
+  console.log('📋 DADOS RECEBIDOS PARA INATIVAÇÃO:');
+  console.log(`   - Usuário a inativar: ${usuario}`);
+  console.log(`   - CNPJ/CPF do usuário: ${cnpj_cpf}`);
+  console.log(`   - Banco de dados: ${banco_dados}`);
+  console.log(`   - Motivo da inativação: ${motivo || 'Não especificado'}`);
+  console.log(`   - Header Usuario (Sistema): ${headerUser}`);
+  console.log(`   - Header tem senha (Sistema): ${!!headerPass}`);
+
+  // Validação das credenciais de sistema
+  if (headerUser !== SYSTEM_ADMIN_USER || headerPass !== SYSTEM_ADMIN_PASS) {
+    console.warn('❌ FALHA NA VALIDAÇÃO DOS HEADERS DE SISTEMA PARA INATIVAÇÃO');
+    return res.status(401).json({ error: "Credenciais de sistema inválidas para inativação." });
+  }
+
+  if (!cnpj_cpf || !usuario || !banco_dados) {
+    console.warn('❌ DADOS DE INATIVAÇÃO INCOMPLETOS');
+    return res.status(400).json({ error: 'Dados de inativação incompletos (cnpj_cpf, usuario, banco_dados são obrigatórios).' });
+  }
+
+  let connection;
+  try {
+    console.log(`🔌 CONECTANDO AO BANCO PARA INATIVAR USUÁRIO: ${banco_dados}`);
+    const pool = await getDatabasePool(banco_dados); // Supondo que getDatabasePool esteja definido
+    connection = await pool.getConnection();
+    console.log('✅ Conexão obtida com sucesso para inativação');
+
+    // Remover máscara do documento
+    const documentoLimpo = removeDocumentMask(cnpj_cpf); // Supondo que removeDocumentMask esteja definido
+    console.log(`📝 Documento limpo: ${documentoLimpo}`);
+
+    console.log('🔍 EXECUTANDO QUERY DE INATIVAÇÃO:');
+    const [result] = await connection.execute(
+      `UPDATE tb_Ambientes_Fornecedor SET Ativo = 'N' WHERE Documento = ? AND usuario = ?`,
+      [documentoLimpo, usuario]
+    );
+
+    console.log(`📊 RESULTADO DA INATIVAÇÃO: ${result.affectedRows} usuário(s) inativado(s)`);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Nenhum usuário encontrado com os dados fornecidos para inativação."
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `Usuário ${usuario} (documento: ${cnpj_cpf}) inativado com sucesso.`,
+      usuarios_afetados: result.affectedRows
+    });
+
+  } catch (error) {
+    console.error('❌ ERRO CRÍTICO DURANTE INATIVAÇÃO:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Erro interno do servidor ao inativar usuário.',
+      details: error.message
+    });
+  } finally {
+    if (connection) {
+      connection.release();
+      console.log('🔌 Conexão liberada de volta ao pool para inativação');
+    }
+  }
+});
 
 // Rota para enviar produtos do cliente
 app.get('/api/sync/send-produtos', authenticateEnvironment, async (req, res) => {
