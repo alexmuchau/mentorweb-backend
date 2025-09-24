@@ -567,21 +567,21 @@ app.get('/api/sync/send-ambientes-fornecedor', async (req, res) => {
   }
 });
 
-// ROTA: Buscar produtos do fornecedor PARA UM CLIENTE ESPECÍFICO (Pedidos Fornecedor Integrado)
-																								   
+// === NOVA ROTA: Buscar produtos do fornecedor PARA UM CLIENTE ESPECÍFICO ===
+// Recebe o ID do ambiente do cliente para que o ERP possa aplicar preços/catálogos específicos.
 app.post('/api/sync/send-produtos-fornecedor-para-cliente', async (req, res) => {
-  //if (!req.isSupplierAuth) { // Esta rota também é chamada com credenciais de fornecedor
-  //  return res.status(403).json({ error: 'Acesso negado. Credenciais de sincronização de fornecedor são necessárias.' });
-  }
+  console.log('📦 REQUISIÇÃO PARA BUSCAR PRODUTOS DO FORNECEDOR PARA UM CLIENTE');
+  
+   
 
-  const { id_ambiente_fornecedor } = req.body; // ID do ambiente do cliente no ERP do fornecedor
+  const { id_ambiente_fornecedor } = req.body; // ID do cliente no ERP do fornecedor
   const banco_dados = req.headers['banco_dados'];
-  console.log(`📦 REQUISIÇÃO PARA BUSCAR PRODUTOS DO FORNECEDOR PARA O CLIENTE (ambiente: ${id_ambiente_fornecedor}) do banco: ${banco_dados}`);
+  const cnpj_fornecedor = req.headers['cnpj'];
 
-									   
-													 
-															 
-																		   
+  console.log('📋 DADOS RECEBIDOS:');
+  console.log(`   - Banco de dados: ${banco_dados}`);
+  console.log(`   - CNPJ do Fornecedor: ${cnpj_fornecedor}`);
+  console.log(`   - ID do Ambiente do Cliente: ${id_ambiente_fornecedor}`);
 
   if (!banco_dados || !id_ambiente_fornecedor) {
     return res.status(400).json({ error: 'Banco de dados e id_ambiente_fornecedor são obrigatórios.' });
@@ -592,85 +592,46 @@ app.post('/api/sync/send-produtos-fornecedor-para-cliente', async (req, res) => 
     const pool = await getDatabasePool(banco_dados);
     connection = await pool.getConnection();
     
-    // Consulta à tabela tb_Produtos_Fornecedor
-    // AQUI você pode ADICIONAR LOGICA para filtrar produtos ou preços
-    // com base no id_ambiente_fornecedor, se houver tabelas de preço por cliente.
+    // NOTA: Esta query é um exemplo. No futuro, você pode adicionar JOINS aqui
+    // com tabelas de preço por cliente, usando o 'id_ambiente_fornecedor' para filtrar.
+    // Por enquanto, ela retorna a lista padrão de produtos.
     const [rows] = await connection.execute(
       `SELECT 
-        id, 
-        nome, 
-								 
-        preco_unitario, 
+        codigo as id, 
+        produto as nome, 
+        codigo_barras as codigo, 
+        COALESCE(preco_venda, 0) as preco,
         COALESCE(estoque, 0) as estoque
-      FROM tb_Produtos_Fornecedor 
-      WHERE Ativo = 'S' 
-      ORDER BY nome`
+      FROM tb_produtos 
+      WHERE ativo = 'S' 
+      ORDER BY produto`
     );
 
-    const produtos = rows.map(p => ({
-      ...p,
-      preco_unitario: parseFloat(p.preco_unitario) // Garante que seja um número
-    }));
+									 
+		   
+																				 
+		
     
-    console.log(`📦 Produtos encontrados para o cliente (ambiente ${id_ambiente_fornecedor}) para o banco ${banco_dados}: ${produtos.length}`);
+    console.log(`📦 Produtos encontrados para o cliente (ambiente ${id_ambiente_fornecedor}): ${rows.length}`);
     
     res.json({
       success: true,
-      produtos: produtos
+      produtos: rows
     });
 
   } catch (error) {
-    console.error(`❌ ERRO AO BUSCAR PRODUTOS PARA O CLIENTE (ambiente ${id_ambiente_fornecedor}, banco ${banco_dados}):`, error);
+    console.error('❌ ERRO AO BUSCAR PRODUTOS PARA O CLIENTE:', error);
     res.status(500).json({ 
       success: false, 
       error: 'Erro ao buscar produtos para o cliente no ERP.', 
       details: error.message 
     });
   } finally {
-					 
-    if (connection) connection.release();
-	 
+    if (connection) {
+      connection.release();
+    }
   }
 });
-// Rota para enviar clientes do cliente
-app.get('/api/sync/send-clientes', authenticateEnvironment, async (req, res) => {
-  try {
-    if (!req.isClientAppAuth) {
-      return res.status(403).json({  
-        error: 'Acesso negado',  
-        details: 'Esta rota requer autenticação de ClienteApp.'  
-      });
-    }
-
-    let connection;
-    try {
-      connection = await req.pool.getConnection();
-      const query = `
-        SELECT codigo, nome, cnpj, cpf, ativo  
-        FROM tb_clientes  
-        WHERE ativo = 'S'
-        ORDER BY nome
-      `;
-
-      const [rows] = await connection.execute(query);
-      
-      res.json({
-        success: true,
-        clientes: rows,
-        total: rows.length
-      });
-    } finally {
-      if (connection) connection.release();
-    }
-  } catch (error) {
-    console.error('Erro ao buscar clientes do cliente:', error);
-    res.status(500).json({
-      error: 'Erro interno do servidor',
-      details: error.message
-    });
-  }
-});
-
 // Rota para enviar formas de pagamento do cliente
 app.get('/api/sync/send-formas-pagamento', authenticateEnvironment, async (req, res) => {
   try {
