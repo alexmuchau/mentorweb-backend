@@ -567,60 +567,59 @@ app.get('/api/sync/send-ambientes-fornecedor', async (req, res) => {
   }
 });
 
-// === NOVA ROTA: Buscar produtos do fornecedor PARA UM CLIENTE ESPECÍFICO ===
-// Recebe o ID do ambiente do cliente para que o ERP possa aplicar preços/catálogos específicos.
-app.post('/api/sync/send-produtos-fornecedor-para-cliente', async (req, res) => {
-  console.log('📦 REQUISIÇÃO PARA BUSCAR PRODUTOS DO FORNECEDOR PARA UM CLIENTE');
+// ROTA: Buscar produtos do fornecedor PARA UM CLIENTE ESPECÍFICO (Pedidos Fornecedor Integrado)
+// (POST porque espera id_ambiente_fornecedor no corpo da requisição)
+app.post('/api/sync/send-produtos-fornecedor-para-cliente', /* SEU MIDDLEWARE DE AUTENTICAÇÃO AQUI, por exemplo, authenticateMentorWebSync, */ async (req, res) => {
+  console.log('📦 REQUISIÇÃO PARA BUSCAR PRODUTOS DO FORNECEDOR PARA UM CLIENTE ESPECÍFICO');
   
-   
-
-  const { id_ambiente_fornecedor } = req.body; // ID do cliente no ERP do fornecedor
+  const { id_ambiente_fornecedor } = req.body; // ID do ambiente do cliente no ERP do fornecedor
   const banco_dados = req.headers['banco_dados'];
-  const cnpj_fornecedor = req.headers['cnpj'];
+  // Os headers de usuário/senha já devem ter sido autenticados pelo seu middleware.
 
   console.log('📋 DADOS RECEBIDOS:');
   console.log(`   - Banco de dados: ${banco_dados}`);
-  console.log(`   - CNPJ do Fornecedor: ${cnpj_fornecedor}`);
   console.log(`   - ID do Ambiente do Cliente: ${id_ambiente_fornecedor}`);
 
   if (!banco_dados || !id_ambiente_fornecedor) {
+    console.warn('❌ DADOS INCOMPLETOS: Banco de dados e id_ambiente_fornecedor são obrigatórios.');
     return res.status(400).json({ error: 'Banco de dados e id_ambiente_fornecedor são obrigatórios.' });
   }
 
   let connection;
   try {
-    const pool = await getDatabasePool(banco_dados);
+    const pool = await getDatabasePool(banco_dados); // Supondo que getDatabasePool esteja definido
     connection = await pool.getConnection();
     
-    // NOTA: Esta query é um exemplo. No futuro, você pode adicionar JOINS aqui
-    // com tabelas de preço por cliente, usando o 'id_ambiente_fornecedor' para filtrar.
-    // Por enquanto, ela retorna a lista padrão de produtos.
+    // Consulta à tabela tb_Produtos_Fornecedor com as colunas da imagem
+    // AQUI você pode ADICIONAR LOGICA para filtrar produtos ou preços
+    // com base no id_ambiente_fornecedor, se houver tabelas de preço por cliente.
     const [rows] = await connection.execute(
       `SELECT 
-        codigo as id, 
-        produto as nome, 
-        codigo_barras as codigo, 
-        COALESCE(preco_venda, 0) as preco,
-        COALESCE(estoque, 0) as estoque
-      FROM tb_produtos 
-      WHERE ativo = 'S' 
-      ORDER BY produto`
+        id, 
+        nome, 
+        preco_unitario, 
+        Ativo 
+      FROM tb_Produtos_Fornecedor 
+      WHERE Ativo = 'S' 
+      ORDER BY nome`
     );
 
-									 
-		   
-																				 
-		
+    const produtos = rows.map(p => ({
+      id: p.id,
+      nome: p.nome,
+      preco: parseFloat(p.preco_unitario), // Garante que seja um número (campo 'preco' para o frontend)
+      // 'Ativo' pode ser incluído se o frontend precisar, mas a query já filtra por 'S'
+    }));
     
-    console.log(`📦 Produtos encontrados para o cliente (ambiente ${id_ambiente_fornecedor}): ${rows.length}`);
+    console.log(`📦 Produtos encontrados para o cliente (ambiente ${id_ambiente_fornecedor}) no banco ${banco_dados}: ${produtos.length} itens.`);
     
     res.json({
       success: true,
-      produtos: rows
+      produtos: produtos
     });
 
   } catch (error) {
-    console.error('❌ ERRO AO BUSCAR PRODUTOS PARA O CLIENTE:', error);
+    console.error(`❌ ERRO AO BUSCAR PRODUTOS PARA O CLIENTE (ambiente ${id_ambiente_fornecedor}, banco ${banco_dados}):`, error);
     res.status(500).json({ 
       success: false, 
       error: 'Erro ao buscar produtos para o cliente no ERP.', 
@@ -629,9 +628,11 @@ app.post('/api/sync/send-produtos-fornecedor-para-cliente', async (req, res) => 
   } finally {
     if (connection) {
       connection.release();
+      console.log('🔌 Conexão liberada para busca de produtos do cliente.');
     }
   }
 });
+
 // Rota para enviar formas de pagamento do cliente
 app.get('/api/sync/send-formas-pagamento', authenticateEnvironment, async (req, res) => {
   try {
