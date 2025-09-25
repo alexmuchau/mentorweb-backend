@@ -518,7 +518,7 @@ app.post('/api/sync/receive-pedido-cliente-fornecedor', authenticateEnvironment 
   }
 });
 
-// ROTA: Buscar produtos do fornecedor (chamada pelo erpSync action 'get_produtos_fornecedor')
+// ROTA: Buscar produtos do fornecedor (VERSÃO ATUALIZADA COM q_minimo E q_multiplo)
 app.get('/api/sync/send-produtos-fornecedor', authenticateEnvironment, async (req, res) => {
   // Apenas credenciais de sincronização de fornecedor podem usar esta rota
   if (!req.isSupplierAuth) {
@@ -532,16 +532,20 @@ app.get('/api/sync/send-produtos-fornecedor', authenticateEnvironment, async (re
     const pool = await getDatabasePool(banco_dados); // Usa o banco de dados do fornecedor
     connection = await pool.getConnection();
 
-    // Consulta à tabela tb_Produtos_Fornecedor
+    // Consulta ATUALIZADA para incluir q_minimo e q_multiplo
     const [rows] = await connection.execute(
-      `SELECT id, nome, preco_unitario, Ativo FROM tb_Produtos_Fornecedor WHERE Ativo = 'S'`
+      `SELECT id, nome, preco_unitario, Ativo, q_minimo, q_multiplo FROM tb_Produtos_Fornecedor WHERE Ativo = 'S'`
     );
 
-    // Formatar preco_unitario para float se necessário
+    // Formatar dados para garantir tipos corretos
     const produtos = rows.map(p => ({
       ...p,
-      preco_unitario: parseFloat(p.preco_unitario) // Garante que seja um número
+      preco_unitario: parseFloat(p.preco_unitario), // Garante que seja um número
+      q_minimo: parseInt(p.q_minimo) || 1,           // Garante que seja INT, padrão 1
+      q_multiplo: parseInt(p.q_multiplo) || 1        // Garante que seja INT, padrão 1
     }));
+
+    console.log(`Produtos do fornecedor encontrados (${banco_dados}): ${produtos.length}`);
 
     res.json({
       success: true,
