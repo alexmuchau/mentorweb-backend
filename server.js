@@ -534,7 +534,7 @@ app.get('/api/sync/send-produtos-fornecedor', authenticateEnvironment, async (re
 
     // Consulta ATUALIZADA para incluir q_minimo e q_multiplo
     const [rows] = await connection.execute(
-      `SELECT id, nome, preco_unitario, Ativo, q_minimo, q_multiplo FROM tb_Produtos_Fornecedor WHERE Ativo = 'S'`
+      `SELECT id, nome, preco_unitario, Ativo, q_minimo, q_multiplo FROM tb_Produtos_Fornecedor WHERE Ativo = 'S' ORDER BY nome`
     );
 
     // Formatar dados para garantir tipos corretos
