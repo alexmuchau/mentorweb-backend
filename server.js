@@ -221,20 +221,17 @@ app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
   }
 });
 
-// ROTA: Enviar pedido para fornecedor
+// ROTA: Enviar pedido para fornecedor (VERSÃO ATUALIZADA)
 app.post('/api/sync/send-pedido-fornecedor', authenticateEnvironment, async (req, res) => {
   if (!req.isClientAppAuth) {
-    return res.status(403).json({ error: 'Acesso negado. Apenas clientes podem enviar pedidos para o fornecedor.' });
+    return res.status(403).json({ error: 'Acesso negado.' });
   }
 
   const { banco_dados } = req.headers;
-  const { produtos, id_ambiente, total_pedido, data_pedido, id_pedido_app } = req.body;
+  const { produtos, id_ambiente, total_pedido, data_pedido, id_pedido_app, nome_cliente, contato } = req.body;
 
   if (!produtos || produtos.length === 0) {
-    return res.status(400).json({
-      success: false,
-      message: 'O pedido deve conter pelo menos um produto.'
-    });
+    return res.status(400).json({ success: false, message: 'O pedido deve conter pelo menos um produto.' });
   }
 
   let connection;
@@ -245,14 +242,17 @@ app.post('/api/sync/send-pedido-fornecedor', authenticateEnvironment, async (req
 
     const pedidoQuery = `
       INSERT INTO tb_Pedidos_Fornecedor
-      (id_ambiente, total_pedido, data_pedido, id_pedido_app)
-      VALUES (?, ?, ?, ?)
+      (id_ambiente, total_pedido, data_pedido, id_pedido_app, nome_cliente, contato, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `;
     const [pedidoResult] = await connection.query(pedidoQuery, [
       id_ambiente,
       total_pedido,
       data_pedido,
-      id_pedido_app || null
+      id_pedido_app || null,
+      nome_cliente || null,
+      contato || null,
+      'pendente'
     ]);
     const newPedidoId = pedidoResult.insertId;
 
@@ -272,7 +272,6 @@ app.post('/api/sync/send-pedido-fornecedor', authenticateEnvironment, async (req
     ]);
 
     await connection.query(produtoQuery, [produtosValues]);
-
     await connection.commit();
 
     res.status(200).json({
