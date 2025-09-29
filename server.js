@@ -221,17 +221,30 @@ app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
   }
 });
 
-// ROTA: Enviar pedido para fornecedor (VERSÃO ATUALIZADA)
+// ROTA: Enviar pedido para fornecedor (VERSÃO CORRIGIDA COM NOMES CORRETOS DOS CAMPOS)
 app.post('/api/sync/send-pedido-fornecedor', authenticateEnvironment, async (req, res) => {
   if (!req.isClientAppAuth) {
-    return res.status(403).json({ error: 'Acesso negado.' });
+    return res.status(403).json({ error: 'Acesso negado. Apenas clientes podem enviar pedidos para o fornecedor.' });
   }
 
   const { banco_dados } = req.headers;
-  const { produtos, id_ambiente, total_pedido, data_pedido, id_pedido_app, nome_cliente, contato } = req.body;
+  const { produtos, id_ambiente, total_pedido, data_pedido, id_pedido_app, nome_cliente, contato, identificador_cliente_item } = req.body;
+
+  console.log('Dados recebidos para pedido:', { 
+    produtos: produtos?.length, 
+    id_ambiente, 
+    total_pedido, 
+    data_pedido, 
+    nome_cliente, 
+    contato, 
+    identificador_cliente_item 
+  });
 
   if (!produtos || produtos.length === 0) {
-    return res.status(400).json({ success: false, message: 'O pedido deve conter pelo menos um produto.' });
+    return res.status(400).json({
+      success: false,
+      message: 'O pedido deve conter pelo menos um produto.'
+    });
   }
 
   let connection;
@@ -240,25 +253,31 @@ app.post('/api/sync/send-pedido-fornecedor', authenticateEnvironment, async (req
     connection = await pool.getConnection();
     await connection.beginTransaction();
 
+    // Converter data para formato MySQL datetime
+    const dataPedidoFormatada = new Date(data_pedido).toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }).slice(0, 19);
+
+    // Query CORRIGIDA: usando os nomes CORRETOS dos campos da tabela
     const pedidoQuery = `
       INSERT INTO tb_Pedidos_Fornecedor
-      (id_ambiente, total_pedido, data_pedido, id_pedido_app, nome_cliente, contato, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      (id_ambiente, valor_total, data_hora_lancamento, id_pedido_sistema_externo, nome_cliente, contato, identificador_cliente_item, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `;
     const [pedidoResult] = await connection.query(pedidoQuery, [
       id_ambiente,
-      total_pedido,
-      data_pedido,
-      id_pedido_app || null,
+      total_pedido,                    // vai para valor_total
+      dataPedidoFormatada,             // vai para data_hora_lancamento
+      id_pedido_app || null,           // vai para id_pedido_sistema_externo
       nome_cliente || null,
       contato || null,
+      identificador_cliente_item || null,
       'pendente'
     ]);
     const newPedidoId = pedidoResult.insertId;
 
+    // Produtos SEM identificador_cliente_item
     const produtoQuery = `
       INSERT INTO tb_Pedidos_Produtos_Fornecedor
-      (id_pedido, id_produto, quantidade, preco_unitario, valor_total, identificador_cliente_item)
+      (id_pedido, id_produto, quantidade, preco_unitario, valor_total)
       VALUES ?
     `;
 
@@ -267,12 +286,14 @@ app.post('/api/sync/send-pedido-fornecedor', authenticateEnvironment, async (req
       p.id_produto,
       p.quantidade,
       p.valor_unitario,
-      p.total_produto,
-      p.identificador_cliente_item
+      p.total_produto
     ]);
 
     await connection.query(produtoQuery, [produtosValues]);
+
     await connection.commit();
+
+    console.log(`Pedido ${newPedidoId} salvo com sucesso no MySQL`);
 
     res.status(200).json({
       success: true,
