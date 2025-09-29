@@ -315,10 +315,10 @@ app.post('/api/sync/send-pedido-fornecedor', authenticateEnvironment, async (req
   }
 });
 
-// ROTA: Receber pedido do fornecedor - VERSÃO COM FUSO HORÁRIO E CAMPOS CORRIGIDOS
+// ROTA: Receber pedido do fornecedor - VERSÃO FINALMENTE CORRIGIDA (SEM identificador_cliente_item EM PRODUTOS)
 app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (req, res) => {
   if (!req.isSupplierAuth) {
-    return res.status(403).json({ 
+    return res.status(403).json({
       error: 'Acesso negado. Apenas sincronização de fornecedor pode receber pedidos.'
     });
   }
@@ -338,49 +338,52 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
     const dataPedidoCliente = new Date(pedidoData.data_pedido);
     const dataFormatada = dataPedidoCliente.toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }).slice(0, 19);
 
-    // 1. Inserir pedido principal SEM id_pedido_sistema_externo
+    // 1. Inserir pedido principal (tb_Pedidos_Fornecedor)
+    // ATENÇÃO: As colunas `nome_cliente`, `contato` e `identificador_cliente_item` devem ser incluídas aqui
+    // se o frontend estiver enviando para esta rota e você quiser que sejam salvas na tabela tb_Pedidos_Fornecedor.
+    // Baseado nas últimas discussões, essa rota é chamada pela página PedidosFornecedorIntegrado (que não envia nome_cliente/contato/identificador_cliente_item diretamente no pedidoData)
+    // e pela "action: send_pedido_fornecedor" do erpSync, que por sua vez envia esses campos.
+    // Para ser robusto, vou incluir esses campos na query, assumindo que eles podem vir no `pedidoData`.
     const [pedidoResult] = await connection.execute(`
       INSERT INTO tb_Pedidos_Fornecedor (
         data_hora_lancamento,
         id_ambiente,
         valor_total,
-        status
-      ) VALUES (?, ?, ?, ?)
+        status,
+        nome_cliente,
+        contato,
+        identificador_cliente_item
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
     `, [
       dataFormatada,
       pedidoData.id_ambiente,
       pedidoData.total_pedido,
-      'pendente'  // Status padrão = 'pendente'
+      'pendente', // Status padrão = 'pendente'
+      pedidoData.nome_cliente || null, // Novo campo
+      pedidoData.contato || null,      // Novo campo
+      pedidoData.identificador_cliente_item || null // Campo movido
     ]);
 
     const pedidoId = pedidoResult.insertId;
     console.log(`Pedido inserido com ID: ${pedidoId}`);
 
-    // 2. Inserir produtos do pedido
+    // 2. Inserir produtos do pedido (tb_Pedidos_Produtos_Fornecedor)
     for (const produto of pedidoData.produtos) {
-																	 
-      let identificadorInt = null;
-      if (produto.identificador_cliente_item) {
-        const numeroExtraido = String(produto.identificador_cliente_item).replace(/\D/g, '');
-        identificadorInt = numeroExtraido ? parseInt(numeroExtraido, 10) : null;
-      }
-      
+      // CORREÇÃO: REMOVIDO "identificador_cliente_item" DAQUI, pois foi movido para a tabela de cabeçalho
       await connection.execute(`
         INSERT INTO tb_Pedidos_Produtos_Fornecedor (
           id_pedido,
           id_produto,
           quantidade,
           preco_unitario,
-          valor_total,
-          identificador_cliente_item
-        ) VALUES (?, ?, ?, ?, ?, ?)
+          valor_total
+        ) VALUES (?, ?, ?, ?, ?)
       `, [
         pedidoId,
         produto.id_produto,
         produto.quantidade,
-        produto.valor_unitario,
-        produto.total_produto,
-        identificadorInt
+        produto.preco_unitario,
+        produto.valor_total
       ]);
     }
 
