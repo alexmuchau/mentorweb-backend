@@ -785,6 +785,45 @@ app.post('/api/sync/send-produtos-fornecedor-para-cliente', authenticateEnvironm
 
 // ROTAS PARA CLIENTES
 
+// Rota para enviar clientes
+app.get('/api/sync/send-clientes', authenticateEnvironment, async (req, res) => {
+  try {
+    if (!req.isClientAppAuth) {
+      return res.status(403).json({ 
+        error: 'Acesso negado', 
+        details: 'Esta rota requer autenticação de ClienteApp.' 
+      });
+    }
+
+    const query = `
+      SELECT 
+        codigo, 
+        nome, 
+        cnpj,
+        cpf,
+        ativo
+      FROM tb_clientes 
+      WHERE ativo = 'S'
+      ORDER BY nome
+    `;
+
+    const [rows] = await req.pool.execute(query);
+    
+    res.json({
+      success: true,
+      clientes: rows,
+      total: rows.length
+    });
+
+  } catch (error) {
+    console.error('Erro ao buscar clientes:', error);
+    res.status(500).json({
+      error: 'Erro interno do servidor',
+      details: error.message
+    });
+  }
+});
+
 // Rota para enviar produtos do cliente
 app.get('/api/sync/send-produtos', authenticateEnvironment, async (req, res) => {
   try {
