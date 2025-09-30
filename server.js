@@ -943,7 +943,7 @@ app.get('/api/sync/send-comandas', authenticateEnvironment, async (req, res) => 
   }
 });
 
-// Rota para receber pedidos do cliente
+// Rota para receber pedidos do cliente (COMPATÍVEL com Pré-venda E Pedidos Integrados)
 app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) => {
   try {
     if (!req.isClientAppAuth) {
@@ -953,10 +953,34 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
       });
     }
 
-    const { pedidos } = req.body;
+    const body = req.body;
+    let pedidosParaProcessar = [];
 
-    if (!Array.isArray(pedidos) || pedidos.length === 0) {
-      return res.status(400).json({ error: 'Array de pedidos inválido ou vazio.' });
+    // Detectar o formato dos dados recebidos
+    if (Array.isArray(body.pedidos)) {
+      // Formato ANTIGO da pré-venda: { pedidos: [ {pedido1}, {pedido2}, ... ] }
+      pedidosParaProcessar = body.pedidos;
+    } else if (body.id_pedido_base44 || body.data) {
+      // Formato NOVO dos Pedidos Integrados: um objeto único com dados do pedido
+      pedidosParaProcessar = [{
+        data: body.data,
+        hora: body.hora,
+        id_cliente: body.id_cliente,
+        id_forma_pagamento: body.id_forma_pagamento,
+        id_local_retirada: body.id_local_retirada,
+        total_produtos: body.total_produtos,
+        status: body.status || 'pendente',
+        itens: body.produtos || [] // No novo formato, os produtos vêm como "produtos"
+      }];
+    } else {
+      return res.status(400).json({ 
+        error: 'Formato de dados inválido.',
+        details: 'Esperado array de pedidos ou objeto único com dados do pedido.'
+      });
+    }
+
+    if (pedidosParaProcessar.length === 0) {
+      return res.status(400).json({ error: 'Nenhum pedido para processar.' });
     }
 
     let insertedPedidos = [];
@@ -964,25 +988,29 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
 
     try {
       connection = await req.pool.getConnection();
-      for (const pedido of pedidos) {
+      
+      for (const pedido of pedidosParaProcessar) {
         await connection.beginTransaction();
 
         // 1. Inserir na tabela de pedidos
         const pedidoQuery = `
           INSERT INTO tb_pedidos  
-          (data, hora, id_cliente, id_forma_pagamento, total_produtos, id_lcto_erp, status)  
-          VALUES (?, ?, ?, ?, ?, ?, ?)
+          (data, hora, id_cliente, id_forma_pagamento, id_local_retirada, total_produtos, id_lcto_erp, status)  
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `;
         const [pedidoResult] = await connection.execute(pedidoQuery, [
           pedido.data,
           pedido.hora,
           pedido.id_cliente,
           pedido.id_forma_pagamento,
+          pedido.id_local_retirada || null,
           pedido.total_produtos,
           pedido.id_lcto_erp || null,
           pedido.status || 'pendente'
         ]);
         const newPedidoId = pedidoResult.insertId;
+
+        console.log(`✅ Pedido inserido com ID: ${newPedidoId}`);
 
         // 2. Inserir os produtos do pedido
         if (Array.isArray(pedido.itens) && pedido.itens.length > 0) {
@@ -1002,19 +1030,35 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
           ]);
 
           await connection.query(produtoQuery, [produtosValues]);
+          console.log(`✅ ${produtosValues.length} produtos inseridos para o pedido ${newPedidoId}`);
         }
 
         await connection.commit();
-        insertedPedidos.push({ id_pedido: newPedidoId, success: true });
+        insertedPedidos.push({ 
+          id_pedido: newPedidoId, 
+          id_lcto_erp: newPedidoId,
+          success: true 
+        });
       }
-      res.status(200).json({
-        success: true,
-        message: 'Pedidos recebidos e salvos com sucesso',
-        pedidos_inseridos: insertedPedidos
-      });
+
+      // Se foi apenas um pedido (formato novo), retornar o id_lcto_erp diretamente
+      if (pedidosParaProcessar.length === 1 && body.id_pedido_base44) {
+        res.status(200).json({
+          success: true,
+          id_lcto_erp: insertedPedidos[0].id_lcto_erp,
+          message: 'Pedido (pré-venda) recebido e salvo com sucesso'
+        });
+      } else {
+        // Formato antigo (múltiplos pedidos)
+        res.status(200).json({
+          success: true,
+          message: 'Pedidos recebidos e salvos com sucesso',
+          pedidos_inseridos: insertedPedidos
+        });
+      }
 
     } catch (error) {
-      console.error('Erro ao salvar pedidos do cliente:', error);
+      console.error('❌ Erro ao salvar pedidos do cliente:', error);
       if (connection) {
         await connection.rollback();
       }
@@ -1028,7 +1072,7 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
       }
     }
   } catch (error) {
-    console.error('Erro fora do bloco transacional ao processar receive-pedidos:', error);
+    console.error('❌ Erro fora do bloco transacional ao processar receive-pedidos:', error);
     res.status(500).json({
       error: 'Erro fatal ao processar pedidos',
       details: error.message
