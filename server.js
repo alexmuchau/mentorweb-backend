@@ -819,8 +819,8 @@ app.get('/api/sync/send-produtos', authenticateEnvironment, async (req, res) => 
   }
 });
 
-// Rota para enviar clientes do cliente
-app.get('/api/sync/send-clientes', authenticateEnvironment, async (req, res) => {
+// Rota para enviar produtos do cliente
+app.get('/api/sync/send-produtos', authenticateEnvironment, async (req, res) => {
   try {
     if (!req.isClientAppAuth) {
       return res.status(403).json({ 
@@ -830,22 +830,29 @@ app.get('/api/sync/send-clientes', authenticateEnvironment, async (req, res) => 
     }
 
     const query = `
-      SELECT codigo, nome, cnpj, cpf, ativo 
-      FROM tb_clientes 
+      SELECT 
+        codigo, 
+        produto, 
+        codigo_barras, 
+        preco_venda, 
+        estoque, 
+        ativo,
+        id_prod_fornecedor  /* <<< CAMPO ADICIONADO AQUI! */
+      FROM tb_produtos 
       WHERE ativo = 'S'
-      ORDER BY nome
+      ORDER BY produto
     `;
 
     const [rows] = await req.pool.execute(query);
     
     res.json({
       success: true,
-      clientes: rows,
+      produtos: rows,
       total: rows.length
     });
 
   } catch (error) {
-    console.error('Erro ao buscar clientes do cliente:', error);
+    console.error('Erro ao buscar produtos do cliente:', error);
     res.status(500).json({
       error: 'Erro interno do servidor',
       details: error.message
