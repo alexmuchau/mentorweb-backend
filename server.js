@@ -100,7 +100,7 @@ const authenticateEnvironment = async (req, res, next) => {
 
   // Inicializa req.pool e flags
   req.pool = null;  
-  req.isClientAppAuth = true;
+  req.isClientAppAuth = false;
   req.isSupplierAuth = false;
   req.environment = null;
 
