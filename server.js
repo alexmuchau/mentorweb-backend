@@ -715,13 +715,11 @@ app.get('/api/sync/send-ambientes-fornecedor', async (req, res) => {
 });
 
 // ROTA: Buscar produtos do fornecedor PARA UM CLIENTE ESPECÍFICO (Pedidos Fornecedor Integrado)
-// (POST porque espera id_ambiente_fornecedor no corpo da requisição)
-app.post('/api/sync/send-produtos-fornecedor-para-cliente', /* SEU MIDDLEWARE DE AUTENTICAÇÃO AQUI, por exemplo, authenticateMentorWebSync, */ async (req, res) => {
+app.post('/api/sync/send-produtos-fornecedor-para-cliente', authenticateEnvironment, async (req, res) => {
   console.log('📦 REQUISIÇÃO PARA BUSCAR PRODUTOS DO FORNECEDOR PARA UM CLIENTE ESPECÍFICO');
   
-  const { id_ambiente_fornecedor } = req.body; // ID do ambiente do cliente no ERP do fornecedor
+  const { id_ambiente_fornecedor } = req.body;
   const banco_dados = req.headers['banco_dados'];
-  // Os headers de usuário/senha já devem ter sido autenticados pelo seu middleware.
 
   console.log('📋 DADOS RECEBIDOS:');
   console.log(`   - Banco de dados: ${banco_dados}`);
@@ -734,17 +732,17 @@ app.post('/api/sync/send-produtos-fornecedor-para-cliente', /* SEU MIDDLEWARE DE
 
   let connection;
   try {
-    const pool = await getDatabasePool(banco_dados); // Supondo que getDatabasePool esteja definido
+    const pool = await getDatabasePool(banco_dados);
     connection = await pool.getConnection();
     
-    // Consulta à tabela tb_Produtos_Fornecedor com as colunas da imagem
-    // AQUI você pode ADICIONAR LOGICA para filtrar produtos ou preços
-    // com base no id_ambiente_fornecedor, se houver tabelas de preço por cliente.
+    // ATUALIZADO: Incluindo q_minimo e q_multiplo na consulta
     const [rows] = await connection.execute(
       `SELECT 
         id, 
         nome, 
-        preco_unitario, 
+        preco_unitario,
+        q_minimo,
+        q_multiplo,
         Ativo 
       FROM tb_Produtos_Fornecedor 
       WHERE Ativo = 'S' 
@@ -753,16 +751,21 @@ app.post('/api/sync/send-produtos-fornecedor-para-cliente', /* SEU MIDDLEWARE DE
 
     const produtos = rows.map(p => ({
       id: p.id,
+      codigo: p.id, // Adicionando campo 'codigo' também
       nome: p.nome,
-      preco: parseFloat(p.preco_unitario), // Garante que seja um número (campo 'preco' para o frontend)
-      // 'Ativo' pode ser incluído se o frontend precisar, mas a query já filtra por 'S'
+      produto: p.nome, // Adicionando campo 'produto' também
+      preco_unitario: parseFloat(p.preco_unitario || 0),
+      q_minimo: parseInt(p.q_minimo) || 1, // NOVO CAMPO
+      q_multiplo: parseInt(p.q_multiplo) || 1, // NOVO CAMPO
+      ativo: p.Ativo
     }));
     
     console.log(`📦 Produtos encontrados para o cliente (ambiente ${id_ambiente_fornecedor}) no banco ${banco_dados}: ${produtos.length} itens.`);
     
     res.json({
       success: true,
-      produtos: produtos
+      produtos: produtos,
+      total: produtos.length
     });
 
   } catch (error) {
