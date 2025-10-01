@@ -1125,7 +1125,7 @@ app.get('/api/sync/send-pedidos-list', authenticateEnvironment, async (req, res)
   }
 });
 
-// ROTA: Buscar itens de um pedido específico (chamada pelo erpSync action 'get_itens_pedido')
+// ROTA ATUALIZADA: Buscar itens de um pedido específico (para seu servidor Node.js externo)
 app.post('/api/sync/send-itens-pedido', authenticateEnvironment, async (req, res) => {
   // A validação de autenticação já é feita pelo middleware `authenticateEnvironment`
   if (!req.isClientAppAuth) {
@@ -1144,6 +1144,7 @@ app.post('/api/sync/send-itens-pedido', authenticateEnvironment, async (req, res
     const pool = await getDatabasePool(clientDb);
     connection = await pool.getConnection();
 
+    // ATUALIZADO: Incluir o campo 'observacao' na query
     const [rows] = await connection.execute(`
       SELECT
         pp.codigo,
@@ -1152,7 +1153,7 @@ app.post('/api/sync/send-itens-pedido', authenticateEnvironment, async (req, res
         pp.quantidade,
         pp.unitario,
         pp.total_produto,
-        pp.observacao, -- NOVO: Campo de observação
+        pp.observacao,
         p.produto as nome_produto
       FROM tb_pedidos_produtos pp
       LEFT JOIN tb_produtos p ON pp.id_produto = p.codigo
