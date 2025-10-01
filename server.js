@@ -1126,15 +1126,14 @@ app.get('/api/sync/send-pedidos-list', authenticateEnvironment, async (req, res)
   }
 });
 
-// ROTA ATUALIZADA: Buscar itens de um pedido específico (para seu servidor Node.js externo)
+// ROTA: Buscar itens de um pedido específico (chamada pelo erpSync action 'get_itens_pedido')
 app.post('/api/sync/send-itens-pedido', authenticateEnvironment, async (req, res) => {
-  // A validação de autenticação já é feita pelo middleware `authenticateEnvironment`
   if (!req.isClientAppAuth) {
     return res.status(403).json({ error: 'Acesso negado. Apenas sincronização de cliente pode buscar itens do pedido.' });
   }
 
   const { codigo_pedido } = req.body;
-  const { clientDb } = req; // Usar o banco_dados que o middleware já validou e anexou
+  const { banco_dados } = req.headers;
 
   if (!codigo_pedido) {
     return res.status(400).json({ error: 'Código do pedido é obrigatório.' });
@@ -1142,10 +1141,10 @@ app.post('/api/sync/send-itens-pedido', authenticateEnvironment, async (req, res
 
   let connection;
   try {
-    const pool = await getDatabasePool(clientDb);
+    const pool = await getDatabasePool(banco_dados);
     connection = await pool.getConnection();
 
-    // ATUALIZADO: Incluir o campo 'observacao' na query
+    // A MUDANÇA ESTÁ AQUI: Adicionado pp.observacao na linha abaixo
     const [rows] = await connection.execute(`
       SELECT
         pp.codigo,
@@ -1168,7 +1167,7 @@ app.post('/api/sync/send-itens-pedido', authenticateEnvironment, async (req, res
     });
 
   } catch (error) {
-    console.error(`Erro ao buscar itens do pedido ${codigo_pedido} no banco ${clientDb}:`, error);
+    console.error(`Erro ao buscar itens do pedido ${codigo_pedido} no banco ${banco_dados}:`, error);
     res.status(500).json({
       success: false,
       error: 'Erro interno do servidor ao buscar itens do pedido.',
