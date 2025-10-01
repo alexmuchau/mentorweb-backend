@@ -1016,7 +1016,7 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
         if (Array.isArray(pedido.itens) && pedido.itens.length > 0) {
           const produtoQuery = `
             INSERT INTO tb_pedidos_produtos
-            (id_pedido, id_produto, quantidade, unitario, total_produto, id_lcto_erp, observacao) // <--- Adicionado 'observacao' aqui
+            (id_pedido, id_produto, quantidade, unitario, total_produto, id_lcto_erp, observacao)
             VALUES ?
           `;
           
@@ -1027,7 +1027,7 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
             item.unitario,
             item.total_produto,
             item.id_lcto_erp || null,
-            item.observacao || '' // <--- Adicionado 'item.observacao' aqui
+            item.observacao || ''
           ]);
 
           await connection.query(produtoQuery, [produtosValues]);
