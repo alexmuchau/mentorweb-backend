@@ -785,35 +785,67 @@ app.post('/api/sync/send-produtos-fornecedor-para-cliente', authenticateEnvironm
   }
 });
 
-// === ROTA: Cancelar pedido fornecedor ===
-app.post('/api/sync/cancelar-pedido-fornecedor', authenticateEnvironment, async (req, res) => {
-  if (!req.isSupplierSync) {
-    return res.status(403).json({ error: 'Acesso negado.' });
+// === ROTA: Cancelar pedido do fornecedor ===
+app.post('/api/sync/cancel-pedido-fornecedor', async (req, res) => {
+  console.log('🚫 REQUISIÇÃO PARA CANCELAR PEDIDO DO FORNECEDOR');
+  
+  const banco_dados = req.headers['banco_dados'];
+  const headerUser = req.headers['usuario'];
+  const headerPass = req.headers['senha'];
+  const { id_pedido, motivo_cancelamento } = req.body;
+
+  console.log('📋 DADOS RECEBIDOS:');
+  console.log(`   - Banco de dados: ${banco_dados}`);
+  console.log(`   - ID Pedido: ${id_pedido}`);
+
+  // Validação das credenciais
+  if (headerUser !== 'mentorweb_fornecedor' || headerPass !== 'mentorweb_sync_forn_2024') {
+    console.warn('❌ CREDENCIAIS DE SISTEMA INVÁLIDAS');
+    return res.status(401).json({ error: "Credenciais de sincronização inválidas." });
   }
 
-  const { id_pedido, motivo_cancelamento } = req.body;
-  const { banco_dados } = req.headers;
-
-  if (!id_pedido) {
-    return res.status(400).json({ error: 'ID do pedido é obrigatório.' });
+  if (!banco_dados || !id_pedido) {
+    return res.status(400).json({ error: 'Banco de dados e ID do pedido são obrigatórios.' });
   }
 
   let connection;
   try {
+    console.log(`🔌 CONECTANDO AO BANCO: ${banco_dados}`);
     const pool = await getDatabasePool(banco_dados);
     connection = await pool.getConnection();
-
-    await connection.execute(
+    
+    // Atualizar status para 'cancelado' na tb_Pedidos_Fornecedor
+    const [result] = await connection.execute(
       `UPDATE tb_Pedidos_Fornecedor SET status = 'cancelado' WHERE id = ?`,
       [id_pedido]
     );
+    
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Pedido não encontrado.' 
+      });
+    }
 
-    res.json({ success: true, message: 'Pedido cancelado no ERP.' });
+    console.log(`✅ Pedido ${id_pedido} cancelado com sucesso no banco ${banco_dados}`);
+    
+    res.json({
+      success: true,
+      message: 'Pedido cancelado com sucesso'
+    });
+
   } catch (error) {
-    console.error('Erro ao cancelar pedido no ERP:', error);
-    res.status(500).json({ success: false, error: error.message });
+    console.error('❌ ERRO AO CANCELAR PEDIDO:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Erro interno do servidor ao cancelar pedido.', 
+      details: error.message 
+    });
   } finally {
-    if (connection) connection.release();
+    if (connection) {
+      connection.release();
+      console.log('🔌 Conexão liberada após cancelamento');
+    }
   }
 });
 
