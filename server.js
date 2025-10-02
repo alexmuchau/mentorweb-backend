@@ -158,6 +158,8 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
+// ROTAS PARA FORNECEDOR
+
 // ROTA ESPECIAL: Autenticação de usuário fornecedor (NÃO USA authenticateEnvironment)
 app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
   const { cnpj_cpf, usuario, senha } = req.body;
@@ -713,6 +715,7 @@ app.get('/api/sync/send-ambientes-fornecedor', async (req, res) => {
     }
   }
 });
+
 // ROTA: Buscar produtos do fornecedor PARA UM CLIENTE ESPECÍFICO (Pedidos Fornecedor Integrado)
 app.post('/api/sync/send-produtos-fornecedor-para-cliente', authenticateEnvironment, async (req, res) => {
   console.log('📦 REQUISIÇÃO PARA BUSCAR PRODUTOS DO FORNECEDOR PARA UM CLIENTE ESPECÍFICO');
@@ -778,6 +781,67 @@ app.post('/api/sync/send-produtos-fornecedor-para-cliente', authenticateEnvironm
     if (connection) {
       connection.release();
       console.log('🔌 Conexão liberada para busca de produtos do cliente.');
+    }
+  }
+});
+
+// === ROTA: Cancelar pedido do fornecedor ===
+app.post('/api/sync/cancelar-pedido-fornecedor', async (req, res) => {
+  console.log('🚫 REQUISIÇÃO PARA CANCELAR PEDIDO DO FORNECEDOR');
+  
+  const { id_pedido_erp, motivo } = req.body;
+  const banco_dados = req.headers['banco_dados'];
+  const headerUser = req.headers['usuario'];
+  const headerPass = req.headers['senha'];
+
+  console.log('📋 DADOS RECEBIDOS:');
+  console.log(`   - ID Pedido ERP: ${id_pedido_erp}`);
+  console.log(`   - Motivo: ${motivo}`);
+  console.log(`   - Banco de dados: ${banco_dados}`);
+
+  // Validação das credenciais
+  if (headerUser !== 'mentorweb_fornecedor' || headerPass !== 'mentorweb_sync_forn_2024') {
+    console.warn('❌ CREDENCIAIS DE SISTEMA INVÁLIDAS');
+    return res.status(401).json({ error: "Credenciais de sincronização inválidas." });
+  }
+
+  if (!banco_dados || !id_pedido_erp) {
+    return res.status(400).json({ error: 'Banco de dados e ID do pedido são obrigatórios.' });
+  }
+
+  let connection;
+  try {
+    console.log(`🔌 CONECTANDO AO BANCO: ${banco_dados}`);
+    const pool = await getDatabasePool(banco_dados);
+    connection = await pool.getConnection();
+    
+    // Atualizar status para cancelado
+    const [result] = await connection.execute(
+      `UPDATE tb_Pedidos_Fornecedor 
+       SET status = 'cancelado' 
+       WHERE id = ?`,
+      [id_pedido_erp]
+    );
+    
+    console.log(`✅ Pedido ${id_pedido_erp} cancelado no ERP. Linhas afetadas: ${result.affectedRows}`);
+    
+    res.json({
+      success: true,
+      message: 'Pedido cancelado com sucesso no ERP',
+      linhas_afetadas: result.affectedRows
+    });
+
+  } catch (error) {
+    console.error('❌ ERRO AO CANCELAR PEDIDO:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Erro ao cancelar pedido no ERP do fornecedor.', 
+      details: error.message 
+    });
+  } finally {
+    if (connection) {
+      connection.release();
+      console.log('🔌 Conexão liberada após cancelamento');
     }
   }
 });
