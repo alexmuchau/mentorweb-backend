@@ -183,7 +183,7 @@ app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
     const documentoSemMascara = removeDocumentMask(cnpj_cpf);
 
     const [rows] = await connection.execute(
-      `SELECT Codigo, ID_Pessoa, Documento, Nome, usuario, Ativo, d_entrega FROM tb_Ambientes_Fornecedor WHERE Documento = ? AND usuario = ? AND Senha = ? AND Ativo = 'S'`, // Adicionado d_entrega aqui
+      `SELECT Codigo, ID_Pessoa, Documento, Nome, usuario, Ativo, d_entrega, dias_bloqueio_pedidos FROM tb_Ambientes_Fornecedor WHERE Documento = ? AND usuario = ? AND Senha = ? AND Ativo = 'S'`,
       [documentoSemMascara, usuario, senha]
     );
 
@@ -206,9 +206,10 @@ app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
         Ativo: usuarioERP.Ativo,
         id_ambiente_erp: usuarioERP.Codigo,
         nome_ambiente: `Ambiente ${usuarioERP.Codigo}`,
-        d_entrega: usuarioERP.d_entrega // NOVO: Retorna a data de entrega
+        d_entrega: usuarioERP.d_entrega,
+        dias_bloqueio_pedidos: usuarioERP.dias_bloqueio_pedidos || 0 // NOVO
       }
-    });
+     });
 
   } catch (error) {
     console.error('Erro ao autenticar usuário fornecedor:', error);
@@ -691,8 +692,8 @@ app.get('/api/sync/send-ambientes-fornecedor', async (req, res) => {
     connection = await pool.getConnection();
     
     const [rows] = await connection.execute(
-      `SELECT Codigo as id, Nome as nome, ID_Pessoa, Documento, d_entrega FROM tb_Ambientes_Fornecedor WHERE Ativo = 'S' ORDER BY Nome` // Adicionado d_entrega aqui
-    );
+       `SELECT Codigo as id, Nome as nome, ID_Pessoa, Documento, d_entrega, dias_bloqueio_pedidos FROM tb_Ambientes_Fornecedor WHERE Ativo = 'S' ORDER BY Nome`
+   );
     
     console.log(`🌳 Ambientes encontrados: ${rows.length}`);
     
