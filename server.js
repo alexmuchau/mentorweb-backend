@@ -181,7 +181,7 @@ app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
     const documentoSemMascara = removeDocumentMask(cnpj_cpf);
 
     const [rows] = await connection.execute(
-      `SELECT Codigo, ID_Pessoa, Documento, Nome, usuario, Ativo FROM tb_Ambientes_Fornecedor WHERE Documento = ? AND usuario = ? AND Senha = ? AND Ativo = 'S'`,
+      `SELECT Codigo, ID_Pessoa, Documento, Nome, usuario, Ativo, d_entrega FROM tb_Ambientes_Fornecedor WHERE Documento = ? AND usuario = ? AND Senha = ? AND Ativo = 'S'`, // Adicionado d_entrega aqui
       [documentoSemMascara, usuario, senha]
     );
 
@@ -203,7 +203,8 @@ app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
         usuario: usuarioERP.usuario,
         Ativo: usuarioERP.Ativo,
         id_ambiente_erp: usuarioERP.Codigo,
-        nome_ambiente: `Ambiente ${usuarioERP.Codigo}`
+        nome_ambiente: `Ambiente ${usuarioERP.Codigo}`,
+        d_entrega: usuarioERP.d_entrega // NOVO: Retorna a data de entrega
       }
     });
 
@@ -220,7 +221,6 @@ app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
     }
   }
 });
-
 // ROTA: Enviar pedido para fornecedor (VERSÃO CORRIGIDA COM NOMES CORRETOS DOS CAMPOS)
 app.post('/api/sync/send-pedido-fornecedor', authenticateEnvironment, async (req, res) => {
   if (!req.isClientAppAuth) {
@@ -689,7 +689,7 @@ app.get('/api/sync/send-ambientes-fornecedor', async (req, res) => {
     connection = await pool.getConnection();
     
     const [rows] = await connection.execute(
-      `SELECT Codigo as id, Nome as nome, ID_Pessoa, Documento FROM tb_Ambientes_Fornecedor WHERE Ativo = 'S' ORDER BY Nome`
+      `SELECT Codigo as id, Nome as nome, ID_Pessoa, Documento, d_entrega FROM tb_Ambientes_Fornecedor WHERE Ativo = 'S' ORDER BY Nome` // Adicionado d_entrega aqui
     );
     
     console.log(`🌳 Ambientes encontrados: ${rows.length}`);
@@ -713,7 +713,6 @@ app.get('/api/sync/send-ambientes-fornecedor', async (req, res) => {
     }
   }
 });
-
 // ROTA: Buscar produtos do fornecedor PARA UM CLIENTE ESPECÍFICO (Pedidos Fornecedor Integrado)
 app.post('/api/sync/send-produtos-fornecedor-para-cliente', authenticateEnvironment, async (req, res) => {
   console.log('📦 REQUISIÇÃO PARA BUSCAR PRODUTOS DO FORNECEDOR PARA UM CLIENTE ESPECÍFICO');
