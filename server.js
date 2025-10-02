@@ -786,18 +786,21 @@ app.post('/api/sync/send-produtos-fornecedor-para-cliente', authenticateEnvironm
 });
 
 // === ROTA: Cancelar pedido do fornecedor ===
-app.post('/api/sync/cancelar-pedido-fornecedor', async (req, res) => {
+app.post('/api/sync/cancel-pedido-fornecedor', async (req, res) => {
   console.log('🚫 REQUISIÇÃO PARA CANCELAR PEDIDO DO FORNECEDOR');
   
-  const { id_pedido_erp, motivo } = req.body;
   const banco_dados = req.headers['banco_dados'];
+  const cnpj = req.headers['cnpj'];
   const headerUser = req.headers['usuario'];
   const headerPass = req.headers['senha'];
 
+  const { id_pedido_sistema_externo, motivo_cancelamento } = req.body;
+
   console.log('📋 DADOS RECEBIDOS:');
-  console.log(`   - ID Pedido ERP: ${id_pedido_erp}`);
-  console.log(`   - Motivo: ${motivo}`);
   console.log(`   - Banco de dados: ${banco_dados}`);
+  console.log(`   - CNPJ: ${cnpj}`);
+  console.log(`   - ID Pedido: ${id_pedido_sistema_externo}`);
+  console.log(`   - Motivo: ${motivo_cancelamento}`);
 
   // Validação das credenciais
   if (headerUser !== 'mentorweb_fornecedor' || headerPass !== 'mentorweb_sync_forn_2024') {
@@ -805,8 +808,12 @@ app.post('/api/sync/cancelar-pedido-fornecedor', async (req, res) => {
     return res.status(401).json({ error: "Credenciais de sincronização inválidas." });
   }
 
-  if (!banco_dados || !id_pedido_erp) {
-    return res.status(400).json({ error: 'Banco de dados e ID do pedido são obrigatórios.' });
+  if (!banco_dados) {
+    return res.status(400).json({ error: 'Banco de dados não especificado no header.' });
+  }
+
+  if (!id_pedido_sistema_externo) {
+    return res.status(400).json({ error: 'ID do pedido é obrigatório.' });
   }
 
   let connection;
@@ -815,20 +822,57 @@ app.post('/api/sync/cancelar-pedido-fornecedor', async (req, res) => {
     const pool = await getDatabasePool(banco_dados);
     connection = await pool.getConnection();
     
-    // Atualizar status para cancelado
-    const [result] = await connection.execute(
-      `UPDATE tb_Pedidos_Fornecedor 
-       SET status = 'cancelado' 
-       WHERE id = ?`,
-      [id_pedido_erp]
+    // Buscar pedido atual para verificar status
+    const [pedidoRows] = await connection.execute(
+      `SELECT id, status FROM tb_Pedidos_Fornecedor WHERE id = ?`,
+      [id_pedido_sistema_externo]
     );
-    
-    console.log(`✅ Pedido ${id_pedido_erp} cancelado no ERP. Linhas afetadas: ${result.affectedRows}`);
+
+    if (pedidoRows.length === 0) {
+      console.error('❌ Pedido não encontrado');
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Pedido não encontrado no sistema externo.' 
+      });
+    }
+
+    const pedidoAtual = pedidoRows[0];
+
+    // Verificar se já está faturado
+    if (pedidoAtual.status === 'faturado') {
+      console.warn('⚠️ Tentativa de cancelar pedido já faturado');
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Não é possível cancelar um pedido já faturado.' 
+      });
+    }
+
+    // Verificar se já está cancelado
+    if (pedidoAtual.status === 'cancelado') {
+      console.warn('⚠️ Pedido já está cancelado');
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Este pedido já está cancelado.' 
+      });
+    }
+
+    // Atualizar status para cancelado
+    const dataHoraCancelamento = new Date();
+    await connection.execute(
+      `UPDATE tb_Pedidos_Fornecedor 
+       SET status = 'cancelado',
+           data_hora_cancelamento = ?,
+           motivo_cancelamento = ?
+       WHERE id = ?`,
+      [dataHoraCancelamento, motivo_cancelamento || 'Cancelado pelo usuário', id_pedido_sistema_externo]
+    );
+
+    console.log(`✅ Pedido ${id_pedido_sistema_externo} cancelado com sucesso no ERP`);
     
     res.json({
       success: true,
-      message: 'Pedido cancelado com sucesso no ERP',
-      linhas_afetadas: result.affectedRows
+      message: 'Pedido cancelado com sucesso no sistema externo',
+      id_pedido: id_pedido_sistema_externo
     });
 
   } catch (error) {
