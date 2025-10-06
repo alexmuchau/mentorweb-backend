@@ -798,6 +798,7 @@ app.post('/api/sync/cancel-pedido-fornecedor', async (req, res) => {
   console.log('📋 DADOS RECEBIDOS:');
   console.log(`   - Banco de dados: ${banco_dados}`);
   console.log(`   - ID Pedido: ${id_pedido}`);
+  console.log(`   - Motivo: ${motivo_cancelamento}`);
 
   // Validação das credenciais
   if (headerUser !== 'mentorweb_fornecedor' || headerPass !== 'mentorweb_sync_forn_2024') {
@@ -815,13 +816,21 @@ app.post('/api/sync/cancel-pedido-fornecedor', async (req, res) => {
     const pool = await getDatabasePool(banco_dados);
     connection = await pool.getConnection();
     
-    // Atualizar status para 'cancelado' na tb_Pedidos_Fornecedor
+    const dataCancelamento = new Date().toISOString().slice(0, 19).replace('T', ' ');
+    const motivoFinal = motivo_cancelamento || 'Cancelado pelo usuário';
+    
+    // Atualizar status, data_cancelamento e motivo_cancelamento na tb_Pedidos_Fornecedor
     const [result] = await connection.execute(
-      `UPDATE tb_Pedidos_Fornecedor SET status = 'cancelado' WHERE id = ?`,
-      [id_pedido]
+      `UPDATE tb_Pedidos_Fornecedor 
+       SET status = 'cancelado', 
+           data_cancelamento = ?, 
+           motivo_cancelamento = ?
+       WHERE id_pedido_sistema_externo = ?`,
+      [dataCancelamento, motivoFinal, id_pedido]
     );
     
     if (result.affectedRows === 0) {
+      console.warn(`⚠️ Pedido ${id_pedido} não encontrado`);
       return res.status(404).json({ 
         success: false, 
         error: 'Pedido não encontrado.' 
@@ -829,6 +838,8 @@ app.post('/api/sync/cancel-pedido-fornecedor', async (req, res) => {
     }
 
     console.log(`✅ Pedido ${id_pedido} cancelado com sucesso no banco ${banco_dados}`);
+    console.log(`   - Data cancelamento: ${dataCancelamento}`);
+    console.log(`   - Motivo: ${motivoFinal}`);
     
     res.json({
       success: true,
