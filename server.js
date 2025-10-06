@@ -786,19 +786,18 @@ app.post('/api/sync/send-produtos-fornecedor-para-cliente', authenticateEnvironm
   }
 });
 
-// === ROTA: Cancelar pedido do fornecedor (CORRIGIDA) ===
+// === ROTA: Cancelar pedido do fornecedor ===
 app.post('/api/sync/cancel-pedido-fornecedor', async (req, res) => {
   console.log('🚫 REQUISIÇÃO PARA CANCELAR PEDIDO DO FORNECEDOR');
   
   const banco_dados = req.headers['banco_dados'];
   const headerUser = req.headers['usuario'];
   const headerPass = req.headers['senha'];
-  const { id_pedido_sistema_externo, motivo } = req.body; // ALTERADO: buscar 'motivo' em vez de 'motivo_cancelamento'
+  const { id_pedido, motivo_cancelamento } = req.body;
 
   console.log('📋 DADOS RECEBIDOS:');
   console.log(`   - Banco de dados: ${banco_dados}`);
-  console.log(`   - ID Pedido: ${id_pedido_sistema_externo}`); // ALTERADO: usar id_pedido_sistema_externo
-  console.log(`   - Motivo: ${motivo}`);
+  console.log(`   - ID Pedido: ${id_pedido}`);
 
   // Validação das credenciais
   if (headerUser !== 'mentorweb_fornecedor' || headerPass !== 'mentorweb_sync_forn_2024') {
@@ -806,7 +805,7 @@ app.post('/api/sync/cancel-pedido-fornecedor', async (req, res) => {
     return res.status(401).json({ error: "Credenciais de sincronização inválidas." });
   }
 
-  if (!banco_dados || !id_pedido_sistema_externo) {
+  if (!banco_dados || !id_pedido) {
     return res.status(400).json({ error: 'Banco de dados e ID do pedido são obrigatórios.' });
   }
 
@@ -816,17 +815,10 @@ app.post('/api/sync/cancel-pedido-fornecedor', async (req, res) => {
     const pool = await getDatabasePool(banco_dados);
     connection = await pool.getConnection();
     
-    // CORRIGIDO: Adicionar data_cancelamento e motivo_cancelamento
-    const dataCancelamento = new Date().toISOString().slice(0, 19).replace('T', ' ');
-    const motivoCancelamento = motivo || 'Cancelado';
-    
+    // Atualizar status para 'cancelado' na tb_Pedidos_Fornecedor
     const [result] = await connection.execute(
-      `UPDATE tb_Pedidos_Fornecedor 
-       SET status = 'cancelado', 
-           data_cancelamento = ?, 
-           motivo_cancelamento = ? 
-       WHERE codigo = ?`, // IMPORTANTE: usar 'codigo' que é a chave primária
-      [dataCancelamento, motivoCancelamento, id_pedido_sistema_externo]
+      `UPDATE tb_Pedidos_Fornecedor SET status = 'cancelado' WHERE id = ?`,
+      [id_pedido]
     );
     
     if (result.affectedRows === 0) {
@@ -836,9 +828,7 @@ app.post('/api/sync/cancel-pedido-fornecedor', async (req, res) => {
       });
     }
 
-    console.log(`✅ Pedido ${id_pedido_sistema_externo} cancelado com sucesso no banco ${banco_dados}`);
-    console.log(`   - Data: ${dataCancelamento}`);
-    console.log(`   - Motivo: ${motivoCancelamento}`);
+    console.log(`✅ Pedido ${id_pedido} cancelado com sucesso no banco ${banco_dados}`);
     
     res.json({
       success: true,
