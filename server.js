@@ -81,7 +81,7 @@ async function getDatabasePool(databaseName) {
     const connection = await newPool.getConnection();
     await connection.query('SELECT 1'); // Testa a conexão com uma query simples
     connection.release();
-    console.log(`Pool de conexão criado e testado para o banco de dados: ${databaseName}`);
+    console.log(`Pool de conexão criado e testado para o banco de dados: ${databaseName} 1`);
   } catch (error) {
     console.error(`Erro ao criar ou testar pool para o banco de dados ${databaseName}:`, error);
     // Em caso de erro na conexão inicial, remova o pool para que uma nova tentativa possa ser feita
