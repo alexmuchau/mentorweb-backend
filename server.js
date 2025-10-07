@@ -825,7 +825,7 @@ app.post('/api/sync/cancel-pedido-fornecedor', async (req, res) => {
        SET status = 'cancelado', 
            data_cancelamento = ?, 
            motivo_cancelamento = ?
-       WHERE id_pedido_sistema_externo = ?`,
+       WHERE id_pedido = ?`,
       [dataCancelamento, motivoFinal, id_pedido]
     );
     
