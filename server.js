@@ -1114,6 +1114,56 @@ app.post('/api/sync/update-comanda-status', async (req, res) => {
     }
 });
 
+// ============================================
+// ROTA: Buscar comandas (com filtro de status)
+// ============================================
+app.post('/api/sync/get-comandas', async (req, res) => {
+    try {
+        const { databaseName, filtro_status } = req.body;
+
+        if (!databaseName) {
+            return res.status(400).json({
+                success: false,
+                error: 'databaseName é obrigatório'
+            });
+        }
+
+        console.log(`📋 Obtendo comandas do banco ${databaseName}${filtro_status ? ` com filtro status="${filtro_status}"` : ''}`);
+
+        const connection = await getDatabasePool(databaseName);
+
+        // Query base
+        let query = 'SELECT codigo, comanda, ativo FROM tb_comandas';
+        const params = [];
+
+        // Aplicar filtro de status se fornecido
+        if (filtro_status) {
+            query += ' WHERE ativo = ?';
+            params.push(filtro_status);
+        }
+
+        query += ' ORDER BY comanda';
+
+        const [comandas] = await connection.execute(query, params);
+
+        console.log(`✅ ${comandas.length} comandas encontradas${filtro_status ? ` (status: ${filtro_status})` : ''}`);
+
+        res.json({
+            success: true,
+            comandas: comandas,
+            total: comandas.length
+        });
+
+    } catch (error) {
+        console.error('❌ Erro ao obter comandas:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Erro ao buscar comandas do banco de dados',
+            details: error.message
+        });
+    }
+});
+
 // Rota para receber pedidos do cliente (COMPATÍVEL com Pré-venda E Pedidos Integrados)
 app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) => {
   try {
