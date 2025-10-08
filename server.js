@@ -1054,6 +1054,66 @@ app.get('/api/sync/send-comandas', authenticateEnvironment, async (req, res) => 
   }
 });
 
+// Nova rota para atualizar status da comanda
+app.post('/api/sync/update-comanda-status', async (req, res) => {
+    try {
+        const { databaseName, id_comanda, status } = req.body;
+
+        if (!databaseName || !id_comanda || !status) {
+            return res.status(400).json({
+                success: false,
+                error: 'databaseName, id_comanda e status são obrigatórios'
+            });
+        }
+
+        // Validar status
+        const statusValidos = ['S', 'N', 'U'];
+        if (!statusValidos.includes(status)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Status inválido. Use S (disponível), N (inativo) ou U (em uso)'
+            });
+        }
+
+        console.log(`📋 Atualizando status da comanda ${id_comanda} para "${status}" no banco ${databaseName}`);
+
+        const connection = await getDatabasePool(databaseName);
+
+        // Atualizar status da comanda
+        const updateQuery = `
+            UPDATE tb_comandas 
+            SET ativo = ? 
+            WHERE codigo = ?
+        `;
+
+        const [result] = await connection.execute(updateQuery, [status, id_comanda]);
+
+        if (result.affectedRows === 0) {
+            console.log(`⚠️ Nenhuma comanda encontrada com código ${id_comanda}`);
+            return res.json({
+                success: false,
+                error: 'Comanda não encontrada'
+            });
+        }
+
+        console.log(`✅ Status da comanda ${id_comanda} atualizado para "${status}"`);
+
+        res.json({
+            success: true,
+            message: `Status da comanda atualizado para ${status}`,
+            id_comanda: id_comanda,
+            novo_status: status
+        });
+
+    } catch (error) {
+        console.error('❌ Erro ao atualizar status da comanda:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
 // Rota para receber pedidos do cliente (COMPATÍVEL com Pré-venda E Pedidos Integrados)
 app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) => {
   try {
