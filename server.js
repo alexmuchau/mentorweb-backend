@@ -912,7 +912,7 @@ app.post('/api/sync/get-status-pedidos-fornecedor', authenticateEnvironment, asy
 // ROTAS PARA CLIENTES
 
 // Rota para enviar clientes
-app.get('/api/sync/send-clientes', authenticateEnvironment, async (req, res) => {
+app.post('/api/sync/get-clientes', authenticateEnvironment, async (req, res) => {
   try {
     if (!req.isClientAppAuth) {
       return res.status(403).json({ 
@@ -951,7 +951,7 @@ app.get('/api/sync/send-clientes', authenticateEnvironment, async (req, res) => 
 });
 
 // Rota para enviar produtos do cliente
-app.get('/api/sync/send-produtos', authenticateEnvironment, async (req, res) => {
+app.post('/api/sync/get-produtos', authenticateEnvironment, async (req, res) => {
   try {
     if (!req.isClientAppAuth) {
       return res.status(403).json({ 
@@ -992,7 +992,7 @@ app.get('/api/sync/send-produtos', authenticateEnvironment, async (req, res) => 
 });
 
 // Rota para enviar formas de pagamento do cliente
-app.get('/api/sync/send-formas-pagamento', authenticateEnvironment, async (req, res) => {
+app.post('/api/sync/get-formas-pagamento', authenticateEnvironment, async (req, res) => {
   try {
     if (!req.isClientAppAuth) {
       return res.status(403).json({  
@@ -1031,7 +1031,7 @@ app.get('/api/sync/send-formas-pagamento', authenticateEnvironment, async (req, 
 });
 
 // Rota para enviar comandas do cliente
-app.get('/api/sync/send-comandas', authenticateEnvironment, async (req, res) => {
+app.post('/api/sync/get-comandas', authenticateEnvironment, async (req, res) => {
   try {
     if (!req.isClientAppAuth) {
       return res.status(403).json({  
