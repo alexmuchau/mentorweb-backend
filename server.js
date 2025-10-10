@@ -815,8 +815,20 @@ app.post('/api/sync/cancel-pedido-fornecedor', async (req, res) => {
     console.log(`🔌 CONECTANDO AO BANCO: ${banco_dados}`);
     const pool = await getDatabasePool(banco_dados);
     connection = await pool.getConnection();
+
+    // --- PONTO DE AJUSTE AQUI ---
+    // 1. Define o offset de Brasília (UTC-3)
+    const offsetHours = 3;
+    const offsetMs = offsetHours * 60 * 60 * 1000;
     
-    const dataCancelamento = new Date().toISOString().slice(0, 19).replace('T', ' ');
+    // 2. Cria um novo objeto Date subtraindo o offset (Horário de Brasília)
+    const dataBrasilia = new Date(new Date().getTime() - offsetMs);
+    
+    // 3. Formata para o formato MySQL 'YYYY-MM-DD HH:MM:SS'
+    const dataCancelamento = dataBrasilia.toISOString().slice(0, 19).replace('T', ' ');
+    // ----------------------------
+    
+    //const dataCancelamento = new Date().toISOString().slice(0, 19).replace('T', ' ');
     const motivoFinal = motivo_cancelamento || 'Cancelado pelo usuário';
     
     // Atualizar status, data_cancelamento e motivo_cancelamento na tb_Pedidos_Fornecedor
