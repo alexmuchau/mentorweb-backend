@@ -789,7 +789,7 @@ app.post('/api/sync/cancel-pedido-fornecedor', async (req, res) => {
   //const banco_dados = req.headers['banco_dados'];
   //const headerUser = req.headers['usuario'];
   //const headerPass = req.headers['senha'];
-  const { 'x-database-name': banco_dados, 'x-usuario': headerUser, 'x-senha': headerPass } = req.headers;
+  
   const { id_pedido, motivo_cancelamento } = req.body;
 
   console.log('📋 DADOS RECEBIDOS:');
