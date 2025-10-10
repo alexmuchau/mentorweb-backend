@@ -166,7 +166,7 @@ app.get('/api/health', (req, res) => {
 // ROTA ESPECIAL: Autenticação de usuário fornecedor (NÃO USA authenticateEnvironment)
 app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
   const { cnpj_cpf, usuario, senha } = req.body;
-  const { 'banco_dados': banco_dados, 'usuario': headerUser, 'senha': headerPass } = req.headers;
+  const { 'x-database-name': banco_dados, 'x-usuario': headerUser, 'x-senha': headerPass } = req.headers; // <-- ALTERADO PARA X-HEADERS
 
   // Validação dos headers de sistema
   if (headerUser !== SUPPLIER_SYNC_USER || headerPass !== SUPPLIER_SYNC_PASS) {
@@ -664,39 +664,31 @@ app.post('/api/erp/inativar-usuario-fornecedor', async (req, res) => {
   }
 });
 
-// === ROTA: Buscar ambientes do fornecedor ===
-app.get('/api/sync/send-ambientes-fornecedor', async (req, res) => {
+// ROTA CORRIGIDA: Buscar ambientes do fornecedor
+// ALTERADO: Adicionado authenticateEnvironment como middleware
+app.post('/api/sync/get-ambientes-fornecedor', authenticateEnvironment, async (req, res) => {
   console.log('🌳 REQUISIÇÃO PARA BUSCAR AMBIENTES DO FORNECEDOR');
-  
-  const banco_dados = req.headers['banco_dados'];
-  const cnpj = req.headers['cnpj'];
-  const headerUser = req.headers['usuario'];
-  const headerPass = req.headers['senha'];
 
-  console.log('📋 DADOS RECEBIDOS:');
-  console.log(`   - Banco de dados: ${banco_dados}`);
-  console.log(`   - CNPJ: ${cnpj}`);
-  console.log(`   - Header Usuario: ${headerUser}`);
+  // O middleware authenticateEnvironment já lidou com a autenticação.
+  // req.pool estará disponível, e req.isSupplierAuth será true se as credenciais de sincronização forem válidas.
 
-  // Validação das credenciais
-  if (headerUser !== 'mentorweb_fornecedor' || headerPass !== 'mentorweb_sync_forn_2024') {
-    console.warn('❌ CREDENCIAIS DE SISTEMA INVÁLIDAS');
-    return res.status(401).json({ error: "Credenciais de sincronização inválidas." });
+  if (!req.isSupplierAuth) { // <-- Verifica se a autenticação de fornecedor sync foi bem-sucedida
+    console.warn('❌ Acesso negado: Requer autenticação de Fornecedor Sync.');
+    return res.status(403).json({ error: 'Acesso negado. Esta rota requer autenticação de Fornecedor Sync.' });
   }
 
-  if (!banco_dados) {
-    return res.status(400).json({ error: 'Banco de dados não especificado no header.' });
-  }
+  // Não precisamos mais ler banco_dados, cnpj, usuario, senha dos headers manualmente aqui,
+  // pois o authenticateEnvironment já os usou e conectou o pool.
 
   let connection;
   try {
-    console.log(`🔌 CONECTANDO AO BANCO: ${banco_dados}`);
-    const pool = await getDatabasePool(banco_dados);
-    connection = await pool.getConnection();
-    
+    // Usamos req.pool, que já foi obtido e testado pelo middleware
+    connection = await req.pool.getConnection(); // Obtém uma conexão do pool
+
+    // A query para buscar ambientes do fornecedor
     const [rows] = await connection.execute(
        `SELECT Codigo as id, Nome as nome, ID_Pessoa, Documento, d_entrega, dias_bloqueio_pedidos FROM tb_Ambientes_Fornecedor WHERE Ativo = 'S' ORDER BY Nome`
-   );
+    );
     
     console.log(`🌳 Ambientes encontrados: ${rows.length}`);
     
@@ -714,7 +706,7 @@ app.get('/api/sync/send-ambientes-fornecedor', async (req, res) => {
     });
   } finally {
     if (connection) {
-      connection.release();
+      connection.release(); // Libera a conexão de volta ao pool
       console.log('🔌 Conexão liberada para busca de ambientes');
     }
   }
@@ -791,11 +783,13 @@ app.post('/api/sync/send-produtos-fornecedor-para-cliente', authenticateEnvironm
 
 // === ROTA: Cancelar pedido do fornecedor ===
 app.post('/api/sync/cancel-pedido-fornecedor', async (req, res) => {
-  console.log('🚫 REQUISIÇÃO PARA CANCELAR PEDIDO DO FORNECEDOR');
+  const { id_pedido, motivo_cancelamento } = req.body;
+  const { 'x-database-name': banco_dados, 'x-usuario': headerUser, 'x-senha': headerPass } = req.headers; // <-- ALTERADO PARA X-HEADERS
   
-  const banco_dados = req.headers['banco_dados'];
-  const headerUser = req.headers['usuario'];
-  const headerPass = req.headers['senha'];
+  //const banco_dados = req.headers['banco_dados'];
+  //const headerUser = req.headers['usuario'];
+  //const headerPass = req.headers['senha'];
+  const { 'x-database-name': banco_dados, 'x-usuario': headerUser, 'x-senha': headerPass } = req.headers;
   const { id_pedido, motivo_cancelamento } = req.body;
 
   console.log('📋 DADOS RECEBIDOS:');
@@ -1071,6 +1065,8 @@ app.post('/api/sync/get-comandas', authenticateEnvironment, async (req, res) => 
 
 // Nova rota para atualizar status da comanda
 app.post('/api/sync/update-comanda-status', async (req, res) => {
+    const { id_comanda, status } = req.body;
+    const banco_dados = req.headers['x-database-name']; // <-- ALTERADO PARA X-HEADERS
     try {
         const { databaseName, id_comanda, status } = req.body;
 
@@ -1286,7 +1282,7 @@ app.post('/api/sync/send-pedidos', authenticateEnvironment, async (req, res) => 
   }
 });
 // ROTA: Buscar lista de pedidos (chamada pelo erpSync action 'get_pedidos')
-app.post('/api/sync/get-pedidos-list', authenticateEnvironment, async (req, res) => {
+app.post('/api/sync/get-pedidos', authenticateEnvironment, async (req, res) => {
   if (!req.isClientAppAuth) {
     return res.status(403).json({ error: 'Acesso negado. Apenas sincronização de cliente pode buscar pedidos.' });
   }
@@ -1331,7 +1327,7 @@ app.post('/api/sync/get-pedidos-list', authenticateEnvironment, async (req, res)
 });
 
 // ROTA: Buscar itens de um pedido específico (chamada pelo erpSync action 'get_itens_pedido')
-app.post('/api/sync/send-itens-pedido', authenticateEnvironment, async (req, res) => {
+app.post('/api/sync/get-itens-pedido', authenticateEnvironment, async (req, res) => {
   if (!req.isClientAppAuth) {
     return res.status(403).json({ error: 'Acesso negado. Apenas sincronização de cliente pode buscar itens do pedido.' });
   }
