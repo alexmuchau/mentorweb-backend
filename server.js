@@ -1180,143 +1180,111 @@ app.post('/api/sync/get-comandas', async (req, res) => {
 });
 
 // Rota para receber pedidos do cliente (COMPATÍVEL com Pré-venda E Pedidos Integrados)
-app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) => {
+// ALTERADO: A rota mudou de '/api/sync/receive-pedidos' para '/api/sync/send-pedidos'
+app.post('/api/sync/send-pedidos', authenticateEnvironment, async (req, res) => {
+  console.log('📦 ROTA: /api/sync/send-pedidos - Recebendo pedido do cliente');
+
+  let connection;
   try {
+    // Verificar se a autenticação é de ClienteApp
     if (!req.isClientAppAuth) {
-      return res.status(403).json({  
-        error: 'Acesso negado',  
-        details: 'Esta rota requer autenticação de ClienteApp.'  
+      console.warn('❌ Acesso negado: requer autenticação de ClienteApp');
+      return res.status(403).json({
+        error: 'Acesso negado',
+        details: 'Esta rota requer autenticação de ClienteApp.'
       });
     }
 
-    const body = req.body;
-    let pedidosParaProcessar = [];
+    const { data, hora, id_cliente, id_forma_pagamento, id_local_retirada, total_produtos, produtos, id_pedido_base44 } = req.body; // Adicionado id_pedido_base44 para pegar se for enviado
 
-    // Detectar o formato dos dados recebidos
-    if (Array.isArray(body.pedidos)) {
-      // Formato ANTIGO da pré-venda: { pedidos: [ {pedido1}, {pedido2}, ... ] }
-      pedidosParaProcessar = body.pedidos;
-    } else if (body.id_pedido_base44 || body.data) {
-      // Formato NOVO dos Pedidos Integrados: um objeto único com dados do pedido
-      pedidosParaProcessar = [{
-        data: body.data,
-        hora: body.hora,
-        id_cliente: body.id_cliente,
-        id_forma_pagamento: body.id_forma_pagamento,
-        id_local_retirada: body.id_local_retirada,
-        total_produtos: body.total_produtos,
-        status: body.status || 'pendente',
-        itens: body.produtos || [] // No novo formato, os produtos vêm como "produtos"
-      }];
-    } else {
-      return res.status(400).json({ 
-        error: 'Formato de dados inválido.',
-        details: 'Esperado array de pedidos ou objeto único com dados do pedido.'
+    // Para o fluxo atual da NovaVenda, estamos enviando um único pedido direto, não um array de 'pedidos' dentro de 'body'.
+    // Portanto, o formato será sempre o "NOVO".
+    const pedido = {
+        data, hora, id_cliente, id_forma_pagamento, id_local_retirada, total_produtos, produtos,
+        status: req.body.status || 'pendente', // Usar o status do body, ou 'pendente'
+        id_pedido_base44: id_pedido_base44 // Para o caso de você enviar do MentorWeb para identificação
+    };
+
+    if (!pedido.data || !pedido.hora || pedido.total_produtos === undefined || !Array.isArray(pedido.produtos) || pedido.produtos.length === 0) {
+      console.warn('❌ Dados do pedido incompletos');
+      return res.status(400).json({
+        error: 'Dados do pedido inválidos ou incompletos',
+        details: 'data, hora, total_produtos e produtos são obrigatórios'
       });
     }
 
-    if (pedidosParaProcessar.length === 0) {
-      return res.status(400).json({ error: 'Nenhum pedido para processar.' });
+    console.log(`📋 Pedido recebido: ${pedido.produtos.length} produtos, total: R$ ${pedido.total_produtos}`);
+
+    connection = await req.pool.getConnection();
+    await connection.beginTransaction();
+    console.log('✅ Conexão obtida e transação iniciada');
+
+    // Inserir pedido na tb_pedidos
+    const pedidoQuery = `
+      INSERT INTO tb_pedidos
+      (data, hora, id_cliente, id_forma_pagamento, id_local_retirada, total_produtos, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `;
+    const [pedidoResult] = await connection.execute(pedidoQuery, [
+      pedido.data,
+      pedido.hora,
+      pedido.id_cliente || null,
+      pedido.id_forma_pagamento || null,
+      pedido.id_local_retirada || null,
+      pedido.total_produtos,
+      pedido.status
+    ]);
+
+    const newPedidoId = pedidoResult.insertId;
+    console.log(`✅ Pedido inserido com ID: ${newPedidoId}`);
+
+    // Inserir os produtos do pedido
+    if (Array.isArray(pedido.produtos) && pedido.produtos.length > 0) {
+      const produtoQuery = `
+        INSERT INTO tb_pedidos_produtos
+        (id_pedido, id_produto, quantidade, unitario, total_produto, observacao)
+        VALUES ?
+      `;
+
+      const produtosValues = pedido.produtos.map(item => [
+        newPedidoId,
+        item.id_produto,
+        item.quantidade,
+        item.unitario,
+        item.total_produto,
+        item.observacao || ''
+      ]);
+
+      await connection.query(produtoQuery, [produtosValues]);
+      console.log(`✅ ${produtosValues.length} produtos inseridos para o pedido ${newPedidoId}`);
     }
 
-    let insertedPedidos = [];
-    let connection;
+    await connection.commit();
+    console.log(`🎉 Pedido ${newPedidoId} processado e commitado com sucesso`);
 
-    try {
-      connection = await req.pool.getConnection();
-      
-      for (const pedido of pedidosParaProcessar) {
-        await connection.beginTransaction();
+    // Resposta para o MentorWeb - sempre com o id_pedido para atualização do id_lcto_erp
+    res.status(200).json({
+      success: true,
+      id_pedido: newPedidoId, // Retorna o ID do pedido criado no ERP
+      message: 'Pedido recebido e salvo com sucesso no ERP.'
+    });
 
-        // 1. Inserir na tabela de pedidos
-        const pedidoQuery = `
-          INSERT INTO tb_pedidos  
-          (data, hora, id_cliente, id_forma_pagamento, id_local_retirada, total_produtos, id_lcto_erp, status)  
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `;
-        const [pedidoResult] = await connection.execute(pedidoQuery, [
-          pedido.data,
-          pedido.hora,
-          pedido.id_cliente,
-          pedido.id_forma_pagamento,
-          pedido.id_local_retirada || null,
-          pedido.total_produtos,
-          pedido.id_lcto_erp || null,
-          pedido.status || 'pendente'
-        ]);
-        const newPedidoId = pedidoResult.insertId;
-
-        console.log(`✅ Pedido inserido com ID: ${newPedidoId}`);
-
-        // 2. Inserir os produtos do pedido
-        if (Array.isArray(pedido.itens) && pedido.itens.length > 0) {
-          const produtoQuery = `
-            INSERT INTO tb_pedidos_produtos
-            (id_pedido, id_produto, quantidade, unitario, total_produto, id_lcto_erp, observacao)
-            VALUES ?
-          `;
-          
-          const produtosValues = pedido.itens.map(item => [
-            newPedidoId,
-            item.id_produto,
-            item.quantidade,
-            item.unitario,
-            item.total_produto,
-            item.id_lcto_erp || null,
-            item.observacao || ''
-          ]);
-
-          await connection.query(produtoQuery, [produtosValues]);
-          console.log(`✅ ${produtosValues.length} produtos inseridos para o pedido ${newPedidoId}`);
-        }
-
-        await connection.commit();
-        insertedPedidos.push({ 
-          id_pedido: newPedidoId, 
-          id_lcto_erp: newPedidoId,
-          success: true 
-        });
-      }
-
-      // Se foi apenas um pedido (formato novo), retornar o id_lcto_erp diretamente
-      if (pedidosParaProcessar.length === 1 && body.id_pedido_base44) {
-        res.status(200).json({
-          success: true,
-          id_lcto_erp: insertedPedidos[0].id_lcto_erp,
-          message: 'Pedido (pré-venda) recebido e salvo com sucesso'
-        });
-      } else {
-        // Formato antigo (múltiplos pedidos)
-        res.status(200).json({
-          success: true,
-          message: 'Pedidos recebidos e salvos com sucesso',
-          pedidos_inseridos: insertedPedidos
-        });
-      }
-
-    } catch (error) {
-      console.error('❌ Erro ao salvar pedidos do cliente:', error);
-      if (connection) {
-        await connection.rollback();
-      }
-      res.status(500).json({
-        error: 'Erro interno do servidor ao processar os pedidos',
-        details: error.message
-      });
-    } finally {
-      if (connection) {
-        connection.release();
-      }
-    }
   } catch (error) {
-    console.error('❌ Erro fora do bloco transacional ao processar receive-pedidos:', error);
+    console.error('❌ Erro ao salvar pedido do cliente:', error);
+    if (connection) {
+      await connection.rollback();
+    }
     res.status(500).json({
-      error: 'Erro fatal ao processar pedidos',
+      success: false,
+      error: 'Erro interno do servidor ao processar o pedido',
       details: error.message
     });
+  } finally {
+    if (connection) {
+      connection.release();
+    }
   }
 });
-
 // ROTA: Buscar lista de pedidos (chamada pelo erpSync action 'get_pedidos')
 app.post('/api/sync/get-pedidos-list', authenticateEnvironment, async (req, res) => {
   if (!req.isClientAppAuth) {
