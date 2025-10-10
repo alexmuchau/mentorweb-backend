@@ -1318,7 +1318,7 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
 });
 
 // ROTA: Buscar lista de pedidos (chamada pelo erpSync action 'get_pedidos')
-app.get('/api/sync/send-pedidos-list', authenticateEnvironment, async (req, res) => {
+app.post('/api/sync/get-pedidos-list', authenticateEnvironment, async (req, res) => {
   if (!req.isClientAppAuth) {
     return res.status(403).json({ error: 'Acesso negado. Apenas sincronização de cliente pode buscar pedidos.' });
   }
