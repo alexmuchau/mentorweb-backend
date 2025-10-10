@@ -64,7 +64,7 @@ async function getDatabasePool(databaseName) {
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
     database: databaseName,
-    port: parseInt(process.env.DB_PORT || 3306),
+    port: parseInt(process.env.DB_PORT || 3333), // Alterado para 3333 como padrão
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0
@@ -159,7 +159,7 @@ app.get('/api/health', (req, res) => {
 // ROTA: Autenticação de usuário fornecedor
 app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
   const { cnpj_cpf, usuario, senha } = req.body;
-  const { 'x-database-name': banco_dados, 'x-cnpj': headerCnpj, 'x-usuario': headerUser, 'x-senha': headerPass } = req.headers; // Pegar CNPJ do header também
+  const { 'x-database-name': banco_dados, 'x-cnpj': headerCnpj, 'x-usuario': headerUser, 'x-senha': headerPass } = req.headers;
 
   // Validação das credenciais de sincronização - Apenas SUPPLIER_SYNC_USER/PASS pode chamar esta rota
   if (headerUser !== SUPPLIER_SYNC_USER || headerPass !== SUPPLIER_SYNC_PASS) {
@@ -293,8 +293,6 @@ app.post('/api/sync/get-ambientes-fornecedor', authenticateEnvironment, async (r
        `SELECT Codigo as id, Nome as nome, ID_Pessoa, Documento, d_entrega, dias_bloqueio_pedidos FROM tb_Ambientes_Fornecedor WHERE Ativo = 'S' ORDER BY Nome`
     );
     
-    console.log(`🌳 Ambientes encontrados: ${rows.length}`);
-    
     res.json({
       success: true,
       ambientes: rows
@@ -397,7 +395,7 @@ app.post('/api/sync/receive-pedido-cliente-fornecedor', authenticateEnvironment,
       });
 
   } catch (error) {
-      console.error('❌ Erro ao salvar pedido de cliente para fornecedor:', error);
+      console.error('❌ ERRO ao salvar pedido de cliente para fornecedor:', error);
       if (connection) await connection.rollback();
       res.status(500).json({
         success: false,
@@ -443,7 +441,7 @@ app.post('/api/sync/cancel-pedido-fornecedor', authenticateEnvironment, async (r
     res.json({ success: true, message: 'Pedido cancelado com sucesso no ERP do fornecedor' });
 
   } catch (error) {
-    console.error('❌ Erro ao cancelar pedido no MySQL:', error);
+    console.error('❌ ERRO ao cancelar pedido no MySQL:', error);
     res.status(500).json({ success: false, error: 'Erro interno ao cancelar pedido', details: error.message });
   } finally {
     if (connection) connection.release();
@@ -708,7 +706,7 @@ app.post('/api/sync/send-pedidos', authenticateEnvironment, async (req, res) => 
 });
 
 // ROTA: Buscar lista de pedidos do cliente
-app.post('/api/sync/get-pedidos-list', authenticateEnvironment, async (req, res) => { // <-- Rota adicionada
+app.post('/api/sync/get-pedidos-list', authenticateEnvironment, async (req, res) => {
   console.log('📋 ROTA: /api/sync/get-pedidos-list - Buscando pedidos do cliente');
 
   if (!req.isClientAppAuth) {
@@ -751,7 +749,7 @@ app.post('/api/sync/get-pedidos-list', authenticateEnvironment, async (req, res)
 });
 
 // ROTA: Buscar itens de um pedido específico
-app.post('/api/sync/send-itens-pedido', authenticateEnvironment, async (req, res) => { // <-- Rota adicionada
+app.post('/api/sync/send-itens-pedido', authenticateEnvironment, async (req, res) => {
   console.log('📋 ROTA: /api/sync/send-itens-pedido - Buscando itens do pedido');
 
   if (!req.isClientAppAuth) {
@@ -801,7 +799,7 @@ app.post('/api/sync/send-itens-pedido', authenticateEnvironment, async (req, res
 });
 
 // ROTA: Enviar dados de Analytics
-app.post('/api/sync/send-analytics', authenticateEnvironment, async (req, res) => { // <-- Rota adicionada
+app.post('/api/sync/send-analytics', authenticateEnvironment, async (req, res) => {
   console.log('📋 ROTA: /api/sync/send-analytics - Buscando dados de analytics');
 
   if (!req.isClientAppAuth) {
