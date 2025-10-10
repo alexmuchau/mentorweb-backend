@@ -30,7 +30,7 @@ app.use(limiter);
 app.use(cors({
   origin: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'cnpj', 'usuario', 'senha', 'banco_dados'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-cnpj', 'x-usuario', 'x-senha', 'x-database-name'],
   credentials: true
 }));
 
@@ -49,71 +49,63 @@ const removeDocumentMask = (documento) => {
 
 /**
  * Função para obter ou criar um pool de conexão para um banco de dados específico.
- * A utilização de pools de conexão é crucial para a performance e escalabilidade,
- * pois evita a sobrecarga de criar e fechar conexões para cada requisição.
- * @param {string} databaseName - O nome do banco de dados.
- * @returns {Promise<mysql.Pool>} O pool de conexão.
  */
 async function getDatabasePool(databaseName) {
   if (!databaseName) {
     throw new Error('Nome do banco de dados não fornecido.');
   }
 
-  // Se o pool para este banco de dados já existe, retorne-o
   if (dbPools[databaseName]) {
     return dbPools[databaseName];
   }
 
-  // Crie um novo pool de conexão para o banco de dados específico
   const newPool = mysql.createPool({
     host: process.env.DB_HOST,
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
-    database: databaseName, // O banco de dados padrão para este pool
-    port: parseInt(process.env.DB_PORT || 3306), // Adicionado parseInt para garantir que a porta seja um número inteiro
+    database: databaseName,
+    port: parseInt(process.env.DB_PORT || 3306),
     waitForConnections: true,
-    connectionLimit: 10, // Ajuste conforme a carga do servidor. Um valor de 10 é um bom ponto de partida.
+    connectionLimit: 10,
     queueLimit: 0
   });
 
-  // Testar a conexão
   try {
     const connection = await newPool.getConnection();
-    await connection.query('SELECT 1'); // Testa a conexão com uma query simples
+    await connection.query('SELECT 1');
     connection.release();
     console.log(`Pool de conexão criado e testado para o banco de dados: ${databaseName}`);
   } catch (error) {
     console.error(`Erro ao criar ou testar pool para o banco de dados ${databaseName}:`, error);
-    // Em caso de erro na conexão inicial, remova o pool para que uma nova tentativa possa ser feita
     delete dbPools[databaseName];
     throw new Error(`Não foi possível conectar ao banco de dados ${databaseName}.`);
   }
 
-  // Armazene e retorne o novo pool
   dbPools[databaseName] = newPool;
   return newPool;
 }
 
 // Middleware de autenticação de ambiente
 const authenticateEnvironment = async (req, res, next) => {
-  const banco_dados = req.headers['x-database-name']; // O MentorWeb envia como x-database-name
-  const cnpj = req.headers['x-cnpj']; // O MentorWeb envia como x-cnpj
-  const usuario = req.headers['x-usuario']; // O MentorWeb envia como x-usuario
-  const senha = req.headers['x-senha']; // O MentorWeb envia como x-senha
+  const banco_dados = req.headers['x-database-name'];
+  const cnpj = req.headers['x-cnpj'];
+  const usuario = req.headers['x-usuario'];
+  const senha = req.headers['x-senha'];
 
-  // Inicializa req.pool e flags
   req.pool = null;  
   req.isClientAppAuth = false;
   req.isSupplierAuth = false;
   req.environment = null;
 
-   if (!cnpj || !usuario || !senha || !banco_dados) {
-    return res.status(400).json({ error: 'Credenciais de ambiente incompletas', details: 'Headers X-CNPJ, X-USUARIO, X-SENHA e X-DATABASE-NAME são obrigatórios.' });
+  if (!cnpj || !usuario || !senha || !banco_dados) {
+    return res.status(400).json({ 
+      error: 'Credenciais de ambiente incompletas', 
+      details: 'Headers X-CNPJ, X-USUARIO, X-SENHA e X-DATABASE-NAME são obrigatórios.' 
+    });
   }
 
   let connection;
   try {
-    // Tenta obter o pool para o banco_dados.
     req.pool = await getDatabasePool(banco_dados);  
 
     // CASO 1: Autenticação para Fornecedor (credenciais de sistema)
@@ -138,17 +130,16 @@ const authenticateEnvironment = async (req, res, next) => {
       return next();
     }
 
-    // Se nenhuma autenticação for bem-sucedida
     console.warn(`Falha na autenticação do ambiente para CNPJ: ${cnpj} e Usuário: ${usuario}`);
     return res.status(401).json({ error: 'Credenciais de ambiente inválidas ou inativas.' });
 
   } catch (error) {
     console.error(`Erro no middleware authenticateEnvironment para banco ${banco_dados}:`, error);
     if (error.message && error.message.includes('Não foi possível conectar ao banco de dados')) {
-        return res.status(401).json({ error: 'Falha na conexão com o banco de dados do ambiente.', details: error.message });
+      return res.status(401).json({ error: 'Falha na conexão com o banco de dados do ambiente.', details: error.message });
     }
     if (error.sqlMessage) {  
-        return res.status(500).json({ error: 'Erro no banco de dados', details: error.sqlMessage });
+      return res.status(500).json({ error: 'Erro no banco de dados', details: error.sqlMessage });
     }
     return res.status(500).json({ error: 'Erro interno do servidor', details: error.message });
   } finally {
@@ -161,16 +152,17 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
+// ==========================================
 // ROTAS PARA FORNECEDOR
+// ==========================================
 
-// ROTA ESPECIAL: Autenticação de usuário fornecedor (NÃO USA authenticateEnvironment)
+// ROTA: Autenticação de usuário fornecedor
 app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
   const { cnpj_cpf, usuario, senha } = req.body;
-  const { 'x-database-name': banco_dados, 'x-usuario': headerUser, 'x-senha': headerPass } = req.headers; // <-- ALTERADO PARA X-HEADERS
+  const { 'x-database-name': banco_dados, 'x-usuario': headerUser, 'x-senha': headerPass } = req.headers;
 
-  // Validação dos headers de sistema
   if (headerUser !== SUPPLIER_SYNC_USER || headerPass !== SUPPLIER_SYNC_PASS) {
-      return res.status(401).json({ error: "Credenciais de sincronização de fornecedor inválidas nos headers." });
+    return res.status(401).json({ error: "Credenciais de sincronização de fornecedor inválidas nos headers." });
   }
 
   if (!cnpj_cpf || !usuario || !senha || !banco_dados) {
@@ -182,11 +174,12 @@ app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
     const pool = await getDatabasePool(banco_dados);
     connection = await pool.getConnection();
 
-    // REMOVEMOS A MÁSCARA ANTES DE CONSULTAR O BANCO DE DADOS
     const documentoSemMascara = removeDocumentMask(cnpj_cpf);
 
     const [rows] = await connection.execute(
-      `SELECT Codigo, ID_Pessoa, Documento, Nome, usuario, Ativo, d_entrega, dias_bloqueio_pedidos FROM tb_Ambientes_Fornecedor WHERE Documento = ? AND usuario = ? AND Senha = ? AND Ativo = 'S'`,
+      `SELECT Codigo, ID_Pessoa, Documento, Nome, usuario, Ativo, d_entrega, dias_bloqueio_pedidos 
+       FROM tb_Ambientes_Fornecedor 
+       WHERE Documento = ? AND usuario = ? AND Senha = ? AND Ativo = 'S'`,
       [documentoSemMascara, usuario, senha]
     );
 
@@ -210,9 +203,9 @@ app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
         id_ambiente_erp: usuarioERP.Codigo,
         nome_ambiente: `Ambiente ${usuarioERP.Codigo}`,
         d_entrega: usuarioERP.d_entrega,
-        dias_bloqueio_pedidos: usuarioERP.dias_bloqueio_pedidos || 0 // NOVO
+        dias_bloqueio_pedidos: usuarioERP.dias_bloqueio_pedidos || 0
       }
-     });
+    });
 
   } catch (error) {
     console.error('Erro ao autenticar usuário fornecedor:', error);
@@ -222,18 +215,16 @@ app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
       details: error.message
     });
   } finally {
-    if (connection) {
-      connection.release();
-    }
+    if (connection) connection.release();
   }
 });
-// ROTA: Enviar pedido para fornecedor (VERSÃO CORRIGIDA COM NOMES CORRETOS DOS CAMPOS)
+
+// ROTA: Enviar pedido para fornecedor
 app.post('/api/sync/send-pedido-fornecedor', authenticateEnvironment, async (req, res) => {
   if (!req.isClientAppAuth) {
     return res.status(403).json({ error: 'Acesso negado. Apenas clientes podem enviar pedidos para o fornecedor.' });
   }
 
-  const { banco_dados } = req.headers;
   const { produtos, id_ambiente, total_pedido, data_pedido, id_pedido_app, nome_cliente, contato, identificador_cliente_item } = req.body;
 
   console.log('Dados recebidos para pedido:', { 
@@ -255,14 +246,11 @@ app.post('/api/sync/send-pedido-fornecedor', authenticateEnvironment, async (req
 
   let connection;
   try {
-    const pool = await getDatabasePool(banco_dados);
-    connection = await pool.getConnection();
+    connection = await req.pool.getConnection();
     await connection.beginTransaction();
 
-    // Converter data para formato MySQL datetime
     const dataPedidoFormatada = new Date(data_pedido).toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }).slice(0, 19);
 
-    // Query CORRIGIDA: usando os nomes CORRETOS dos campos da tabela
     const pedidoQuery = `
       INSERT INTO tb_Pedidos_Fornecedor
       (id_ambiente, valor_total, data_hora_lancamento, id_pedido_sistema_externo, nome_cliente, contato, identificador_cliente_item, status)
@@ -270,9 +258,9 @@ app.post('/api/sync/send-pedido-fornecedor', authenticateEnvironment, async (req
     `;
     const [pedidoResult] = await connection.query(pedidoQuery, [
       id_ambiente,
-      total_pedido,                    // vai para valor_total
-      dataPedidoFormatada,             // vai para data_hora_lancamento
-      id_pedido_app || null,           // vai para id_pedido_sistema_externo
+      total_pedido,
+      dataPedidoFormatada,
+      id_pedido_app || null,
       nome_cliente || null,
       contato || null,
       identificador_cliente_item || null,
@@ -280,7 +268,6 @@ app.post('/api/sync/send-pedido-fornecedor', authenticateEnvironment, async (req
     ]);
     const newPedidoId = pedidoResult.insertId;
 
-    // Produtos SEM identificador_cliente_item
     const produtoQuery = `
       INSERT INTO tb_Pedidos_Produtos_Fornecedor
       (id_pedido, id_produto, quantidade, preco_unitario, valor_total)
@@ -296,7 +283,6 @@ app.post('/api/sync/send-pedido-fornecedor', authenticateEnvironment, async (req
     ]);
 
     await connection.query(produtoQuery, [produtosValues]);
-
     await connection.commit();
 
     console.log(`Pedido ${newPedidoId} salvo com sucesso no MySQL`);
@@ -309,9 +295,7 @@ app.post('/api/sync/send-pedido-fornecedor', authenticateEnvironment, async (req
 
   } catch (error) {
     console.error('Erro ao salvar pedido do fornecedor:', error);
-    if (connection) {
-      await connection.rollback();
-    }
+    if (connection) await connection.rollback();
     res.status(500).json({
       error: 'Erro interno do servidor ao processar o pedido',
       details: error.message
@@ -321,7 +305,7 @@ app.post('/api/sync/send-pedido-fornecedor', authenticateEnvironment, async (req
   }
 });
 
-// ROTA: Receber pedido do fornecedor - VERSÃO FINALMENTE CORRIGIDA (SEM identificador_cliente_item EM PRODUTOS)
+// ROTA: Receber pedido do fornecedor
 app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (req, res) => {
   if (!req.isSupplierAuth) {
     return res.status(403).json({
@@ -329,27 +313,18 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
     });
   }
 
-  const { banco_dados } = req.headers;
   const pedidoData = req.body;
 
   console.log('Processando pedido de fornecedor:', JSON.stringify(pedidoData, null, 2));
 
   let connection;
   try {
-    const pool = await getDatabasePool(banco_dados);
-    connection = await pool.getConnection();
+    connection = await req.pool.getConnection();
     await connection.beginTransaction();
 
-    // Converte a data do pedido para o fuso de São Paulo no formato do MySQL
     const dataPedidoCliente = new Date(pedidoData.data_pedido);
     const dataFormatada = dataPedidoCliente.toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }).slice(0, 19);
 
-    // 1. Inserir pedido principal (tb_Pedidos_Fornecedor)
-    // ATENÇÃO: As colunas `nome_cliente`, `contato` e `identificador_cliente_item` devem ser incluídas aqui
-    // se o frontend estiver enviando para esta rota e você quiser que sejam salvas na tabela tb_Pedidos_Fornecedor.
-    // Baseado nas últimas discussões, essa rota é chamada pela página PedidosFornecedorIntegrado (que não envia nome_cliente/contato/identificador_cliente_item diretamente no pedidoData)
-    // e pela "action: send_pedido_fornecedor" do erpSync, que por sua vez envia esses campos.
-    // Para ser robusto, vou incluir esses campos na query, assumindo que eles podem vir no `pedidoData`.
     const [pedidoResult] = await connection.execute(`
       INSERT INTO tb_Pedidos_Fornecedor (
         data_hora_lancamento,
@@ -364,18 +339,16 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
       dataFormatada,
       pedidoData.id_ambiente,
       pedidoData.total_pedido,
-      'pendente', // Status padrão = 'pendente'
-      pedidoData.nome_cliente || null, // Novo campo
-      pedidoData.contato || null,      // Novo campo
-      pedidoData.identificador_cliente_item || null // Campo movido
+      'pendente',
+      pedidoData.nome_cliente || null,
+      pedidoData.contato || null,
+      pedidoData.identificador_cliente_item || null
     ]);
 
     const pedidoId = pedidoResult.insertId;
     console.log(`Pedido inserido com ID: ${pedidoId}`);
 
-    // 2. Inserir produtos do pedido (tb_Pedidos_Produtos_Fornecedor)
     for (const produto of pedidoData.produtos) {
-      // CORREÇÃO: REMOVIDO "identificador_cliente_item" DAQUI, pois foi movido para a tabela de cabeçalho
       await connection.execute(`
         INSERT INTO tb_Pedidos_Produtos_Fornecedor (
           id_pedido,
@@ -415,30 +388,26 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
   }
 });
 
-// ====== ROTA ATUALIZADA: Receber pedido de CLIENTE para FORNECEDOR (Pedidos Fornecedor Integrado) ======
+// ROTA: Receber pedido de CLIENTE para FORNECEDOR (Pedidos Fornecedor Integrado)
 app.post('/api/sync/receive-pedido-cliente-fornecedor', authenticateEnvironment, async (req, res) => {
   console.log('--- INICIANDO receive-pedido-cliente-fornecedor ---');
   
-  const banco_dados_fornecedor = req.headers['banco_dados']; // Banco de dados do FORNECEDOR
   const pedidoData = req.body;
 
-  // Campos esperados do frontend
   const {
-    id_ambiente, // ID do ambiente do cliente no ERP do fornecedor
+    id_ambiente,
     total_pedido,
-    produtos, // Array de produtos
+    produtos,
     data_pedido,
-    nome_cliente, // NOVO: Nome do cliente
-    contato, // NOVO: Contato do cliente
-    identificador_cliente_item // NOVO: Identificador agora no nível do pedido
+    nome_cliente,
+    contato,
+    identificador_cliente_item
   } = pedidoData;
 
-  console.log(`📋 Dados do pedido recebidos de cliente para fornecedor no banco ${banco_dados_fornecedor}:`);
+  console.log(`📋 Dados do pedido recebidos de cliente para fornecedor:`);
   console.log(JSON.stringify(pedidoData, null, 2));
 
-  // Validação básica dos dados do pedido
   if (
-    !banco_dados_fornecedor ||
     !id_ambiente ||
     total_pedido === undefined ||
     !Array.isArray(produtos) ||
@@ -449,21 +418,17 @@ app.post('/api/sync/receive-pedido-cliente-fornecedor', authenticateEnvironment,
     return res.status(400).json({
       success: false,
       error: 'Dados do pedido inválidos ou incompletos.',
-      details: 'banco_dados (header), id_ambiente, total_pedido, produtos (array não vazio) e data_pedido são obrigatórios.'
+      details: 'id_ambiente, total_pedido, produtos (array não vazio) e data_pedido são obrigatórios.'
     });
   }
 
   let connection;
   try {
-    console.log(`🔌 Conectando ao banco de dados do fornecedor: ${banco_dados_fornecedor}`);
-    const pool = await getDatabasePool(banco_dados_fornecedor);
-    connection = await pool.getConnection();
+    connection = await req.pool.getConnection();
     await connection.beginTransaction();
 
-    // Converte a data do pedido para o fuso de São Paulo no formato do MySQL DATETIME
     const dataPedidoProcessada = new Date(data_pedido).toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }).slice(0, 19);
 
-    // 1. Inserir na tb_Pedidos_Fornecedor (COM identificador_cliente_item, nome_cliente, contato)
     const pedidoQuery = `
       INSERT INTO tb_Pedidos_Fornecedor (
         data_hora_lancamento,
@@ -477,20 +442,19 @@ app.post('/api/sync/receive-pedido-cliente-fornecedor', authenticateEnvironment,
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `;
     const [pedidoResult] = await connection.query(pedidoQuery, [
-      dataPedidoProcessada,           // data_hora_lancamento
-      id_ambiente,                    // id_ambiente
-      total_pedido,                   // valor_total
-      'pendente',                     // status (padrão)
-      null,                           // id_pedido_sistema_externo (NULL inicialmente)
-      nome_cliente || null,           // nome_cliente
-      contato || null,                // contato
-      identificador_cliente_item || null // identificador_cliente_item
+      dataPedidoProcessada,
+      id_ambiente,
+      total_pedido,
+      'pendente',
+      null,
+      nome_cliente || null,
+      contato || null,
+      identificador_cliente_item || null
     ]);
 
     const newPedidoId = pedidoResult.insertId;
     console.log(`✅ Pedido inserido na tb_Pedidos_Fornecedor com ID: ${newPedidoId}`);
 
-    // 2. Inserir na tb_Pedidos_Produtos_Fornecedor (SEM identificador_cliente_item)
     const produtoQuery = `
       INSERT INTO tb_Pedidos_Produtos_Fornecedor (
         id_pedido,
@@ -501,13 +465,12 @@ app.post('/api/sync/receive-pedido-cliente-fornecedor', authenticateEnvironment,
       ) VALUES ?
     `;
 
-    // Mapeia os produtos do array para o formato esperado pelo INSERT
     const produtosValues = produtos.map(p => [
-      newPedidoId,                        // id_pedido
-      p.id_produto,                       // id_produto (do fornecedor)
-      p.quantidade,                       // quantidade
-      p.valor_unitario || p.preco_unitario, // preco_unitario
-      p.total_produto || p.valor_total    // valor_total
+      newPedidoId,
+      p.id_produto,
+      p.quantidade,
+      p.valor_unitario || p.preco_unitario,
+      p.total_produto || p.valor_total
     ]);
 
     await connection.query(produtoQuery, [produtosValues]);
@@ -534,34 +497,32 @@ app.post('/api/sync/receive-pedido-cliente-fornecedor', authenticateEnvironment,
     if (connection) connection.release();
   }
 });
-// ROTA: Buscar produtos do fornecedor (VERSÃO ATUALIZADA COM q_minimo E q_multiplo)
-app.get('/api/sync/send-produtos-fornecedor', authenticateEnvironment, async (req, res) => {
-  // Apenas credenciais de sincronização de fornecedor podem usar esta rota
+
+// ROTA CORRIGIDA: Buscar produtos do fornecedor (para o próprio fornecedor)
+app.post('/api/sync/send-produtos-fornecedor', authenticateEnvironment, async (req, res) => {
   if (!req.isSupplierAuth) {
     return res.status(403).json({ error: 'Acesso negado. Apenas sincronização de fornecedor pode buscar produtos.' });
   }
 
-  const { banco_dados } = req.headers; // O banco de dados do fornecedor está nos headers
-
   let connection;
   try {
-    const pool = await getDatabasePool(banco_dados); // Usa o banco de dados do fornecedor
-    connection = await pool.getConnection();
+    connection = await req.pool.getConnection();
 
-    // Consulta ATUALIZADA para incluir q_minimo e q_multiplo
     const [rows] = await connection.execute(
-      `SELECT id, nome, preco_unitario, Ativo, q_minimo, q_multiplo FROM tb_Produtos_Fornecedor WHERE Ativo = 'S' ORDER BY nome`
+      `SELECT id, nome, preco_unitario, Ativo, q_minimo, q_multiplo 
+       FROM tb_Produtos_Fornecedor 
+       WHERE Ativo = 'S' 
+       ORDER BY nome`
     );
 
-    // Formatar dados para garantir tipos corretos
     const produtos = rows.map(p => ({
       ...p,
-      preco_unitario: parseFloat(p.preco_unitario), // Garante que seja um número
-      q_minimo: parseInt(p.q_minimo) || 1,           // Garante que seja INT, padrão 1
-      q_multiplo: parseInt(p.q_multiplo) || 1        // Garante que seja INT, padrão 1
+      preco_unitario: parseFloat(p.preco_unitario),
+      q_minimo: parseInt(p.q_minimo) || 1,
+      q_multiplo: parseInt(p.q_multiplo) || 1
     }));
 
-    console.log(`Produtos do fornecedor encontrados (${banco_dados}): ${produtos.length}`);
+    console.log(`Produtos do fornecedor encontrados: ${produtos.length}`);
 
     res.json({
       success: true,
@@ -569,7 +530,7 @@ app.get('/api/sync/send-produtos-fornecedor', authenticateEnvironment, async (re
     });
 
   } catch (error) {
-    console.error(`Erro ao buscar produtos do fornecedor (${banco_dados}):`, error);
+    console.error(`Erro ao buscar produtos do fornecedor:`, error);
     res.status(500).json({
       success: false,
       error: 'Erro interno do servidor ao buscar produtos do fornecedor.',
@@ -580,20 +541,14 @@ app.get('/api/sync/send-produtos-fornecedor', authenticateEnvironment, async (re
   }
 });
 
-// --- ROTA DE ADMINISTRAÇÃO PARA INATIVAR USUÁRIO FORNECEDOR ---
-// Este endpoint é destinado a ser chamado por um processo administrativo da MentorWeb
-// (como o Painel DEV ou o módulo de Configurações da Empresa ERP) para gerenciar
-// o status de usuários no ERP de um fornecedor.
+// ROTA: Inativar usuário fornecedor (administrativa)
 app.post('/api/erp/inativar-usuario-fornecedor', async (req, res) => {
   console.log('🔒 INICIANDO PROCESSO DE INATIVAÇÃO DE USUÁRIO FORNECEDOR');
 
-  // Credenciais de sistema para esta rota, se necessário.
-  // IMPORTANTE: Ajuste estas credenciais para algo seguro e específico do seu ambiente.
   const SYSTEM_ADMIN_USER = 'admin_sistema';
   const SYSTEM_ADMIN_PASS = 'admin_inativar_2024';
 
-  const body = req.body;
-  const { cnpj_cpf, usuario, motivo } = body;
+  const { cnpj_cpf, usuario, motivo } = req.body;
   const banco_dados = req.headers['banco_dados'];
   const headerUser = req.headers['usuario'];
   const headerPass = req.headers['senha'];
@@ -603,10 +558,7 @@ app.post('/api/erp/inativar-usuario-fornecedor', async (req, res) => {
   console.log(`   - CNPJ/CPF do usuário: ${cnpj_cpf}`);
   console.log(`   - Banco de dados: ${banco_dados}`);
   console.log(`   - Motivo da inativação: ${motivo || 'Não especificado'}`);
-  console.log(`   - Header Usuario (Sistema): ${headerUser}`);
-  console.log(`   - Header tem senha (Sistema): ${!!headerPass}`);
 
-  // Validação das credenciais de sistema
   if (headerUser !== SYSTEM_ADMIN_USER || headerPass !== SYSTEM_ADMIN_PASS) {
     console.warn('❌ FALHA NA VALIDAÇÃO DOS HEADERS DE SISTEMA PARA INATIVAÇÃO');
     return res.status(401).json({ error: "Credenciais de sistema inválidas para inativação." });
@@ -620,12 +572,11 @@ app.post('/api/erp/inativar-usuario-fornecedor', async (req, res) => {
   let connection;
   try {
     console.log(`🔌 CONECTANDO AO BANCO PARA INATIVAR USUÁRIO: ${banco_dados}`);
-    const pool = await getDatabasePool(banco_dados); // Supondo que getDatabasePool esteja definido
+    const pool = await getDatabasePool(banco_dados);
     connection = await pool.getConnection();
     console.log('✅ Conexão obtida com sucesso para inativação');
 
-    // Remover máscara do documento
-    const documentoLimpo = removeDocumentMask(cnpj_cpf); // Supondo que removeDocumentMask esteja definido
+    const documentoLimpo = removeDocumentMask(cnpj_cpf);
     console.log(`📝 Documento limpo: ${documentoLimpo}`);
 
     console.log('🔍 EXECUTANDO QUERY DE INATIVAÇÃO:');
@@ -665,29 +616,23 @@ app.post('/api/erp/inativar-usuario-fornecedor', async (req, res) => {
 });
 
 // ROTA CORRIGIDA: Buscar ambientes do fornecedor
-// ALTERADO: Adicionado authenticateEnvironment como middleware
 app.post('/api/sync/get-ambientes-fornecedor', authenticateEnvironment, async (req, res) => {
   console.log('🌳 REQUISIÇÃO PARA BUSCAR AMBIENTES DO FORNECEDOR');
 
-  // O middleware authenticateEnvironment já lidou com a autenticação.
-  // req.pool estará disponível, e req.isSupplierAuth será true se as credenciais de sincronização forem válidas.
-
-  if (!req.isSupplierAuth) { // <-- Verifica se a autenticação de fornecedor sync foi bem-sucedida
+  if (!req.isSupplierAuth) {
     console.warn('❌ Acesso negado: Requer autenticação de Fornecedor Sync.');
     return res.status(403).json({ error: 'Acesso negado. Esta rota requer autenticação de Fornecedor Sync.' });
   }
 
-  // Não precisamos mais ler banco_dados, cnpj, usuario, senha dos headers manualmente aqui,
-  // pois o authenticateEnvironment já os usou e conectou o pool.
-
   let connection;
   try {
-    // Usamos req.pool, que já foi obtido e testado pelo middleware
-    connection = await req.pool.getConnection(); // Obtém uma conexão do pool
+    connection = await req.pool.getConnection();
 
-    // A query para buscar ambientes do fornecedor
     const [rows] = await connection.execute(
-       `SELECT Codigo as id, Nome as nome, ID_Pessoa, Documento, d_entrega, dias_bloqueio_pedidos FROM tb_Ambientes_Fornecedor WHERE Ativo = 'S' ORDER BY Nome`
+       `SELECT Codigo as id, Nome as nome, ID_Pessoa, Documento, d_entrega, dias_bloqueio_pedidos 
+        FROM tb_Ambientes_Fornecedor 
+        WHERE Ativo = 'S' 
+        ORDER BY Nome`
     );
     
     console.log(`🌳 Ambientes encontrados: ${rows.length}`);
@@ -706,34 +651,30 @@ app.post('/api/sync/get-ambientes-fornecedor', authenticateEnvironment, async (r
     });
   } finally {
     if (connection) {
-      connection.release(); // Libera a conexão de volta ao pool
+      connection.release();
       console.log('🔌 Conexão liberada para busca de ambientes');
     }
   }
 });
 
-// ROTA: Buscar produtos do fornecedor PARA UM CLIENTE ESPECÍFICO (Pedidos Fornecedor Integrado)
-app.post('/api/sync/send-produtos-fornecedor-para-cliente', authenticateEnvironment, async (req, res) => {
-  console.log('📦 REQUISIÇÃO PARA BUSCAR PRODUTOS DO FORNECEDOR PARA UM CLIENTE ESPECÍFICO');
+// ROTA RENOMEADA: Buscar produtos do fornecedor PARA UM CLIENTE ESPECÍFICO
+app.post('/api/sync/get-produtos-fornecedor', authenticateEnvironment, async (req, res) => {
+  console.log('📦 REQUISIÇÃO PARA BUSCAR PRODUTOS DO FORNECEDOR');
   
   const { id_ambiente_fornecedor } = req.body;
-  const banco_dados = req.headers['banco_dados'];
 
   console.log('📋 DADOS RECEBIDOS:');
-  console.log(`   - Banco de dados: ${banco_dados}`);
   console.log(`   - ID do Ambiente do Cliente: ${id_ambiente_fornecedor}`);
 
-  if (!banco_dados || !id_ambiente_fornecedor) {
-    console.warn('❌ DADOS INCOMPLETOS: Banco de dados e id_ambiente_fornecedor são obrigatórios.');
-    return res.status(400).json({ error: 'Banco de dados e id_ambiente_fornecedor são obrigatórios.' });
+  if (!id_ambiente_fornecedor) {
+    console.warn('❌ DADOS INCOMPLETOS: id_ambiente_fornecedor é obrigatório.');
+    return res.status(400).json({ error: 'id_ambiente_fornecedor é obrigatório.' });
   }
 
   let connection;
   try {
-    const pool = await getDatabasePool(banco_dados);
-    connection = await pool.getConnection();
+    connection = await req.pool.getConnection();
     
-    // ATUALIZADO: Incluindo q_minimo e q_multiplo na consulta
     const [rows] = await connection.execute(
       `SELECT 
         id, 
@@ -749,16 +690,16 @@ app.post('/api/sync/send-produtos-fornecedor-para-cliente', authenticateEnvironm
 
     const produtos = rows.map(p => ({
       id: p.id,
-      codigo: p.id, // Adicionando campo 'codigo' também
+      codigo: p.id,
       nome: p.nome,
-      produto: p.nome, // Adicionando campo 'produto' também
+      produto: p.nome,
       preco_unitario: parseFloat(p.preco_unitario || 0),
-      q_minimo: parseInt(p.q_minimo) || 1, // NOVO CAMPO
-      q_multiplo: parseInt(p.q_multiplo) || 1, // NOVO CAMPO
+      q_minimo: parseInt(p.q_minimo) || 1,
+      q_multiplo: parseInt(p.q_multiplo) || 1,
       ativo: p.Ativo
     }));
     
-    console.log(`📦 Produtos encontrados para o cliente (ambiente ${id_ambiente_fornecedor}) no banco ${banco_dados}: ${produtos.length} itens.`);
+    console.log(`📦 Produtos encontrados: ${produtos.length} itens.`);
     
     res.json({
       success: true,
@@ -767,66 +708,42 @@ app.post('/api/sync/send-produtos-fornecedor-para-cliente', authenticateEnvironm
     });
 
   } catch (error) {
-    console.error(`❌ ERRO AO BUSCAR PRODUTOS PARA O CLIENTE (ambiente ${id_ambiente_fornecedor}, banco ${banco_dados}):`, error);
+    console.error(`❌ ERRO AO BUSCAR PRODUTOS:`, error);
     res.status(500).json({ 
       success: false, 
-      error: 'Erro ao buscar produtos para o cliente no ERP.', 
+      error: 'Erro ao buscar produtos no ERP.', 
       details: error.message 
     });
   } finally {
-    if (connection) {
-      connection.release();
-      console.log('🔌 Conexão liberada para busca de produtos do cliente.');
-    }
+    if (connection) connection.release();
   }
 });
 
-// === ROTA: Cancelar pedido do fornecedor ===
-app.post('/api/sync/cancel-pedido-fornecedor', async (req, res) => {
-  const { id_pedido, motivo_cancelamento } = req.body;
-  const { 'x-database-name': banco_dados, 'x-usuario': headerUser, 'x-senha': headerPass } = req.headers; // <-- ALTERADO PARA X-HEADERS
+// ROTA CORRIGIDA: Cancelar pedido do fornecedor
+app.post('/api/sync/cancel-pedido-fornecedor', authenticateEnvironment, async (req, res) => {
+  console.log('🔒 INICIANDO CANCELAMENTO DE PEDIDO FORNECEDOR');
   
-  //const banco_dados = req.headers['banco_dados'];
-  //const headerUser = req.headers['usuario'];
-  //const headerPass = req.headers['senha'];
+  const { id_pedido, motivo_cancelamento } = req.body;
 
-  console.log('📋 DADOS RECEBIDOS:');
-  console.log(`   - Banco de dados: ${banco_dados}`);
-  console.log(`   - ID Pedido: ${id_pedido}`);
-  console.log(`   - Motivo: ${motivo_cancelamento}`);
-
-  // Validação das credenciais
-  if (headerUser !== 'mentorweb_fornecedor' || headerPass !== 'mentorweb_sync_forn_2024') {
-    console.warn('❌ CREDENCIAIS DE SISTEMA INVÁLIDAS');
-    return res.status(401).json({ error: "Credenciais de sincronização inválidas." });
+  if (!req.isSupplierAuth) {
+    console.warn('❌ Acesso negado: Requer autenticação de Fornecedor Sync.');
+    return res.status(403).json({ error: 'Acesso negado. Esta rota requer autenticação de Fornecedor Sync.' });
   }
 
-  if (!banco_dados || !id_pedido) {
-    return res.status(400).json({ error: 'Banco de dados e ID do pedido são obrigatórios.' });
+  if (!id_pedido) {
+    return res.status(400).json({ error: 'ID do pedido é obrigatório.' });
   }
 
   let connection;
   try {
-    console.log(`🔌 CONECTANDO AO BANCO: ${banco_dados}`);
-    const pool = await getDatabasePool(banco_dados);
-    connection = await pool.getConnection();
+    connection = await req.pool.getConnection();
 
-    // --- PONTO DE AJUSTE AQUI ---
-    // 1. Define o offset de Brasília (UTC-3)
     const offsetHours = 3;
     const offsetMs = offsetHours * 60 * 60 * 1000;
-    
-    // 2. Cria um novo objeto Date subtraindo o offset (Horário de Brasília)
     const dataBrasilia = new Date(new Date().getTime() - offsetMs);
-    
-    // 3. Formata para o formato MySQL 'YYYY-MM-DD HH:MM:SS'
     const dataCancelamento = dataBrasilia.toISOString().slice(0, 19).replace('T', ' ');
-    // ----------------------------
-    
-    //const dataCancelamento = new Date().toISOString().slice(0, 19).replace('T', ' ');
     const motivoFinal = motivo_cancelamento || 'Cancelado pelo usuário';
     
-    // Atualizar status, data_cancelamento e motivo_cancelamento na tb_Pedidos_Fornecedor
     const [result] = await connection.execute(
       `UPDATE tb_Pedidos_Fornecedor 
        SET status = 'cancelado', 
@@ -844,9 +761,7 @@ app.post('/api/sync/cancel-pedido-fornecedor', async (req, res) => {
       });
     }
 
-    console.log(`✅ Pedido ${id_pedido} cancelado com sucesso no banco ${banco_dados}`);
-    console.log(`   - Data cancelamento: ${dataCancelamento}`);
-    console.log(`   - Motivo: ${motivoFinal}`);
+    console.log(`✅ Pedido ${id_pedido} cancelado com sucesso`);
     
     res.json({
       success: true,
@@ -861,21 +776,17 @@ app.post('/api/sync/cancel-pedido-fornecedor', async (req, res) => {
       details: error.message 
     });
   } finally {
-    if (connection) {
-      connection.release();
-      console.log('🔌 Conexão liberada após cancelamento');
-    }
+    if (connection) connection.release();
   }
 });
 
-// === ROTA: Buscar status de pedidos fornecedor ===
+// ROTA: Buscar status de pedidos fornecedor
 app.post('/api/sync/get-status-pedidos-fornecedor', authenticateEnvironment, async (req, res) => {
-  if (!req.isSupplierSync) {
+  if (!req.isSupplierAuth) {
     return res.status(403).json({ error: 'Acesso negado.' });
   }
 
   const { ids_pedidos } = req.body;
-  const { banco_dados } = req.headers;
 
   if (!Array.isArray(ids_pedidos) || ids_pedidos.length === 0) {
     return res.status(400).json({ error: 'IDs de pedidos são obrigatórios.' });
@@ -883,8 +794,7 @@ app.post('/api/sync/get-status-pedidos-fornecedor', authenticateEnvironment, asy
 
   let connection;
   try {
-    const pool = await getDatabasePool(banco_dados);
-    connection = await pool.getConnection();
+    connection = await req.pool.getConnection();
 
     const placeholders = ids_pedidos.map(() => '?').join(',');
     const [rows] = await connection.execute(
@@ -901,9 +811,11 @@ app.post('/api/sync/get-status-pedidos-fornecedor', authenticateEnvironment, asy
   }
 });
 
+// ==========================================
 // ROTAS PARA CLIENTES
+// ==========================================
 
-// Rota para enviar clientes
+// ROTA: Buscar clientes
 app.post('/api/sync/get-clientes', authenticateEnvironment, async (req, res) => {
   try {
     if (!req.isClientAppAuth) {
@@ -942,7 +854,7 @@ app.post('/api/sync/get-clientes', authenticateEnvironment, async (req, res) => 
   }
 });
 
-// Rota para enviar produtos do cliente
+// ROTA: Buscar produtos do cliente
 app.post('/api/sync/get-produtos', authenticateEnvironment, async (req, res) => {
   try {
     if (!req.isClientAppAuth) {
@@ -960,7 +872,7 @@ app.post('/api/sync/get-produtos', authenticateEnvironment, async (req, res) => 
         preco_venda, 
         estoque, 
         ativo,
-        id_prod_fornecedor  /* <<< CAMPO ADICIONADO AQUI! */
+        id_prod_fornecedor
       FROM tb_produtos 
       WHERE ativo = 'S'
       ORDER BY produto
@@ -983,7 +895,7 @@ app.post('/api/sync/get-produtos', authenticateEnvironment, async (req, res) => 
   }
 });
 
-// Rota para enviar formas de pagamento do cliente
+// ROTA: Buscar formas de pagamento do cliente
 app.post('/api/sync/get-formas-pagamento', authenticateEnvironment, async (req, res) => {
   try {
     if (!req.isClientAppAuth) {
@@ -1022,7 +934,7 @@ app.post('/api/sync/get-formas-pagamento', authenticateEnvironment, async (req, 
   }
 });
 
-// Rota para enviar comandas do cliente
+// ROTA: Buscar comandas do cliente
 app.post('/api/sync/get-comandas', authenticateEnvironment, async (req, res) => {
   try {
     if (!req.isClientAppAuth) {
@@ -1061,34 +973,38 @@ app.post('/api/sync/get-comandas', authenticateEnvironment, async (req, res) => 
   }
 });
 
-// Nova rota para atualizar status da comanda
-app.post('/api/sync/update-comanda-status', async (req, res) => {
+// ROTA CORRIGIDA: Atualizar status da comanda
+app.post('/api/sync/update-comanda-status', authenticateEnvironment, async (req, res) => {
     const { id_comanda, status } = req.body;
-    const banco_dados = req.headers['x-database-name']; // <-- ALTERADO PARA X-HEADERS
+
+    if (!req.isClientAppAuth) {
+        return res.status(403).json({
+            error: 'Acesso negado',
+            details: 'Esta rota requer autenticação de ClienteApp.'
+        });
+    }
+
+    if (!id_comanda || !status) {
+        return res.status(400).json({
+            success: false,
+            error: 'id_comanda e status são obrigatórios'
+        });
+    }
+
+    const statusValidos = ['S', 'N', 'U'];
+    if (!statusValidos.includes(status)) {
+        return res.status(400).json({
+            success: false,
+            error: 'Status inválido. Use S (disponível), N (inativo) ou U (em uso)'
+        });
+    }
+
+    console.log(`📋 Atualizando status da comanda ${id_comanda} para "${status}"`);
+
+    let connection;
     try {
-        const { databaseName, id_comanda, status } = req.body;
+        connection = await req.pool.getConnection();
 
-        if (!databaseName || !id_comanda || !status) {
-            return res.status(400).json({
-                success: false,
-                error: 'databaseName, id_comanda e status são obrigatórios'
-            });
-        }
-
-        // Validar status
-        const statusValidos = ['S', 'N', 'U'];
-        if (!statusValidos.includes(status)) {
-            return res.status(400).json({
-                success: false,
-                error: 'Status inválido. Use S (disponível), N (inativo) ou U (em uso)'
-            });
-        }
-
-        console.log(`📋 Atualizando status da comanda ${id_comanda} para "${status}" no banco ${databaseName}`);
-
-        const connection = await getDatabasePool(databaseName);
-
-        // Atualizar status da comanda
         const updateQuery = `
             UPDATE tb_comandas 
             SET ativo = ? 
@@ -1120,67 +1036,17 @@ app.post('/api/sync/update-comanda-status', async (req, res) => {
             success: false,
             error: error.message
         });
+    } finally {
+        if (connection) connection.release();
     }
 });
 
-// ============================================
-// ROTA: Buscar comandas (com filtro de status)
-// ============================================
-app.post('/api/sync/get-comandas', async (req, res) => {
-    try {
-        const { databaseName, filtro_status } = req.body;
-
-        if (!databaseName) {
-            return res.status(400).json({
-                success: false,
-                error: 'databaseName é obrigatório'
-            });
-        }
-
-        console.log(`📋 Obtendo comandas do banco ${databaseName}${filtro_status ? ` com filtro status="${filtro_status}"` : ''}`);
-
-        const connection = await getDatabasePool(databaseName);
-
-        // Query base
-        let query = 'SELECT codigo, comanda, ativo FROM tb_comandas';
-        const params = [];
-
-        // Aplicar filtro de status se fornecido
-        if (filtro_status) {
-            query += ' WHERE ativo = ?';
-            params.push(filtro_status);
-        }
-
-        query += ' ORDER BY comanda';
-
-        const [comandas] = await connection.execute(query, params);
-
-        console.log(`✅ ${comandas.length} comandas encontradas${filtro_status ? ` (status: ${filtro_status})` : ''}`);
-
-        res.json({
-            success: true,
-            comandas: comandas,
-            total: comandas.length
-        });
-
-    } catch (error) {
-        console.error('❌ Erro ao obter comandas:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao buscar comandas do banco de dados',
-            details: error.message
-        });
-    }
-});
-
-// Rota para receber pedidos do cliente (COMPATÍVEL com Pré-venda E Pedidos Integrados)
-// ALTERADO: A rota mudou de '/api/sync/receive-pedidos' para '/api/sync/send-pedidos'
+// ROTA: Receber pedidos do cliente
 app.post('/api/sync/send-pedidos', authenticateEnvironment, async (req, res) => {
   console.log('📦 ROTA: /api/sync/send-pedidos - Recebendo pedido do cliente');
 
   let connection;
   try {
-    // Verificar se a autenticação é de ClienteApp
     if (!req.isClientAppAuth) {
       console.warn('❌ Acesso negado: requer autenticação de ClienteApp');
       return res.status(403).json({
@@ -1189,14 +1055,12 @@ app.post('/api/sync/send-pedidos', authenticateEnvironment, async (req, res) => 
       });
     }
 
-    const { data, hora, id_cliente, id_forma_pagamento, id_local_retirada, total_produtos, produtos, id_pedido_base44 } = req.body; // Adicionado id_pedido_base44 para pegar se for enviado
+    const { data, hora, id_cliente, id_forma_pagamento, id_local_retirada, total_produtos, produtos, id_pedido_base44 } = req.body;
 
-    // Para o fluxo atual da NovaVenda, estamos enviando um único pedido direto, não um array de 'pedidos' dentro de 'body'.
-    // Portanto, o formato será sempre o "NOVO".
     const pedido = {
         data, hora, id_cliente, id_forma_pagamento, id_local_retirada, total_produtos, produtos,
-        status: req.body.status || 'pendente', // Usar o status do body, ou 'pendente'
-        id_pedido_base44: id_pedido_base44 // Para o caso de você enviar do MentorWeb para identificação
+        status: req.body.status || 'pendente',
+        id_pedido_base44: id_pedido_base44
     };
 
     if (!pedido.data || !pedido.hora || pedido.total_produtos === undefined || !Array.isArray(pedido.produtos) || pedido.produtos.length === 0) {
@@ -1213,7 +1077,6 @@ app.post('/api/sync/send-pedidos', authenticateEnvironment, async (req, res) => 
     await connection.beginTransaction();
     console.log('✅ Conexão obtida e transação iniciada');
 
-    // Inserir pedido na tb_pedidos
     const pedidoQuery = `
       INSERT INTO tb_pedidos
       (data, hora, id_cliente, id_forma_pagamento, id_local_retirada, total_produtos, status)
@@ -1232,7 +1095,6 @@ app.post('/api/sync/send-pedidos', authenticateEnvironment, async (req, res) => 
     const newPedidoId = pedidoResult.insertId;
     console.log(`✅ Pedido inserido com ID: ${newPedidoId}`);
 
-    // Inserir os produtos do pedido
     if (Array.isArray(pedido.produtos) && pedido.produtos.length > 0) {
       const produtoQuery = `
         INSERT INTO tb_pedidos_produtos
@@ -1256,41 +1118,34 @@ app.post('/api/sync/send-pedidos', authenticateEnvironment, async (req, res) => 
     await connection.commit();
     console.log(`🎉 Pedido ${newPedidoId} processado e commitado com sucesso`);
 
-    // Resposta para o MentorWeb - sempre com o id_pedido para atualização do id_lcto_erp
     res.status(200).json({
       success: true,
-      id_pedido: newPedidoId, // Retorna o ID do pedido criado no ERP
+      id_pedido: newPedidoId,
       message: 'Pedido recebido e salvo com sucesso no ERP.'
     });
 
   } catch (error) {
     console.error('❌ Erro ao salvar pedido do cliente:', error);
-    if (connection) {
-      await connection.rollback();
-    }
+    if (connection) await connection.rollback();
     res.status(500).json({
       success: false,
       error: 'Erro interno do servidor ao processar o pedido',
       details: error.message
     });
   } finally {
-    if (connection) {
-      connection.release();
-    }
+    if (connection) connection.release();
   }
 });
-// ROTA: Buscar lista de pedidos (chamada pelo erpSync action 'get_pedidos')
+
+// ROTA: Buscar lista de pedidos
 app.post('/api/sync/get-pedidos', authenticateEnvironment, async (req, res) => {
   if (!req.isClientAppAuth) {
     return res.status(403).json({ error: 'Acesso negado. Apenas sincronização de cliente pode buscar pedidos.' });
   }
 
-  const { banco_dados } = req.headers;
-
   let connection;
   try {
-    const pool = await getDatabasePool(banco_dados);
-    connection = await pool.getConnection();
+    connection = await req.pool.getConnection();
 
     const [rows] = await connection.execute(`
       SELECT
@@ -1313,7 +1168,7 @@ app.post('/api/sync/get-pedidos', authenticateEnvironment, async (req, res) => {
     });
 
   } catch (error) {
-    console.error(`Erro ao buscar pedidos do banco ${banco_dados}:`, error);
+    console.error(`Erro ao buscar pedidos:`, error);
     res.status(500).json({
       success: false,
       error: 'Erro interno do servidor ao buscar pedidos.',
@@ -1324,14 +1179,13 @@ app.post('/api/sync/get-pedidos', authenticateEnvironment, async (req, res) => {
   }
 });
 
-// ROTA: Buscar itens de um pedido específico (chamada pelo erpSync action 'get_itens_pedido')
+// ROTA: Buscar itens de um pedido específico
 app.post('/api/sync/get-itens-pedido', authenticateEnvironment, async (req, res) => {
   if (!req.isClientAppAuth) {
     return res.status(403).json({ error: 'Acesso negado. Apenas sincronização de cliente pode buscar itens do pedido.' });
   }
 
   const { codigo_pedido } = req.body;
-  const { banco_dados } = req.headers;
 
   if (!codigo_pedido) {
     return res.status(400).json({ error: 'Código do pedido é obrigatório.' });
@@ -1339,10 +1193,8 @@ app.post('/api/sync/get-itens-pedido', authenticateEnvironment, async (req, res)
 
   let connection;
   try {
-    const pool = await getDatabasePool(banco_dados);
-    connection = await pool.getConnection();
+    connection = await req.pool.getConnection();
 
-    // A MUDANÇA ESTÁ AQUI: Adicionado pp.observacao na linha abaixo
     const [rows] = await connection.execute(`
       SELECT
         pp.codigo,
@@ -1365,7 +1217,7 @@ app.post('/api/sync/get-itens-pedido', authenticateEnvironment, async (req, res)
     });
 
   } catch (error) {
-    console.error(`Erro ao buscar itens do pedido ${codigo_pedido} no banco ${banco_dados}:`, error);
+    console.error(`Erro ao buscar itens do pedido ${codigo_pedido}:`, error);
     res.status(500).json({
       success: false,
       error: 'Erro interno do servidor ao buscar itens do pedido.',
@@ -1376,69 +1228,58 @@ app.post('/api/sync/get-itens-pedido', authenticateEnvironment, async (req, res)
   }
 });
 
-// ROTA: Buscar dados para analytics (chamada pelo erpSync action 'get_analytics')
-app.get('/api/sync/send-analytics', authenticateEnvironment, async (req, res) => {
+// ROTA CORRIGIDA: Buscar dados para analytics
+app.post('/api/sync/get-analytics', authenticateEnvironment, async (req, res) => {
   if (!req.isClientAppAuth) {
     return res.status(403).json({ error: 'Acesso negado. Apenas sincronização de cliente pode buscar analytics.' });
   }
 
-  const { banco_dados } = req.headers;
-
   let connection;
   try {
-    const pool = await getDatabasePool(banco_dados);
-    connection = await pool.getConnection();
+    connection = await req.pool.getConnection();
 
-    // Obter data atual e data do mês anterior
     const agora = new Date();
     const mesAtual = agora.getMonth() + 1;
     const anoAtual = agora.getFullYear();
     const mesAnterior = mesAtual === 1 ? 12 : mesAtual - 1;
     const anoAnterior = mesAtual === 1 ? anoAtual - 1 : anoAtual;
 
-    // Vendas do mês atual
     const [vendasMesAtual] = await connection.execute(`
       SELECT COALESCE(SUM(total_produtos), 0) as total
       FROM tb_pedidos
       WHERE MONTH(data) = ? AND YEAR(data) = ?
     `, [mesAtual, anoAtual]);
 
-    // Vendas do mês anterior
     const [vendasMesAnterior] = await connection.execute(`
       SELECT COALESCE(SUM(total_produtos), 0) as total
       FROM tb_pedidos
       WHERE MONTH(data) = ? AND YEAR(data) = ?
     `, [mesAnterior, anoAnterior]);
 
-    // Pedidos do mês atual
     const [pedidosMesAtual] = await connection.execute(`
       SELECT COUNT(*) as total
       FROM tb_pedidos
       WHERE MONTH(data) = ? AND YEAR(data) = ?
     `, [mesAtual, anoAtual]);
 
-    // Pedidos do mês anterior
     const [pedidosMesAnterior] = await connection.execute(`
       SELECT COUNT(*) as total
       FROM tb_pedidos
       WHERE MONTH(data) = ? AND YEAR(data) = ?
     `, [mesAnterior, anoAnterior]);
 
-    // Total de clientes ativos
     const [totalClientes] = await connection.execute(`
       SELECT COUNT(*) as total
       FROM tb_clientes
       WHERE ativo = 'S'
     `);
 
-    // Total de produtos ativos
     const [totalProdutos] = await connection.execute(`
       SELECT COUNT(*) as total
       FROM tb_produtos
       WHERE ativo = 'S'
     `);
 
-    // Produtos mais vendidos (aproximação)
     const [produtosMaisVendidos] = await connection.execute(`
       SELECT
         p.codigo,
@@ -1455,7 +1296,6 @@ app.get('/api/sync/send-analytics', authenticateEnvironment, async (req, res) =>
       LIMIT 5
     `, [mesAtual, anoAtual]);
 
-    // Calcular crescimento
     const totalVendasAtual = parseFloat(vendasMesAtual[0].total);
     const totalVendasAnterior = parseFloat(vendasMesAnterior[0].total);
     const crescimentoVendas = totalVendasAnterior > 0 ?
@@ -1479,7 +1319,7 @@ app.get('/api/sync/send-analytics', authenticateEnvironment, async (req, res) =>
       },
       clientes: {
         total: parseInt(totalClientes[0].total),
-        novosClientes: 0 // Você pode implementar lógica para novos clientes se necessário
+        novosClientes: 0
       },
       produtos: {
         total: parseInt(totalProdutos[0].total),
@@ -1498,7 +1338,7 @@ app.get('/api/sync/send-analytics', authenticateEnvironment, async (req, res) =>
     });
 
   } catch (error) {
-    console.error(`Erro ao buscar analytics do banco ${banco_dados}:`, error);
+    console.error(`Erro ao buscar analytics:`, error);
     res.status(500).json({
       success: false,
       error: 'Erro interno do servidor ao buscar analytics.',
