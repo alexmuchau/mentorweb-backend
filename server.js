@@ -1,3 +1,4 @@
+
 const express = require('express');
 const mysql = require('mysql2/promise');
 const cors = require('cors');
@@ -96,10 +97,7 @@ async function getDatabasePool(databaseName) {
 
 // Middleware de autenticação de ambiente
 const authenticateEnvironment = async (req, res, next) => {
-  const banco_dados = req.headers['x-database-name']; // O MentorWeb envia como x-database-name
-  const cnpj = req.headers['x-cnpj']; // O MentorWeb envia como x-cnpj
-  const usuario = req.headers['x-usuario']; // O MentorWeb envia como x-usuario
-  const senha = req.headers['x-senha']; // O MentorWeb envia como x-senha
+  const { cnpj, usuario, senha, banco_dados } = req.headers;
 
   // Inicializa req.pool e flags
   req.pool = null;  
@@ -107,8 +105,8 @@ const authenticateEnvironment = async (req, res, next) => {
   req.isSupplierAuth = false;
   req.environment = null;
 
-   if (!cnpj || !usuario || !senha || !banco_dados) {
-    return res.status(400).json({ error: 'Credenciais de ambiente incompletas', details: 'Headers X-CNPJ, X-USUARIO, X-SENHA e X-DATABASE-NAME são obrigatórios.' });
+  if (!cnpj || !usuario || !senha || !banco_dados) {
+    return res.status(400).json({ error: 'Credenciais de ambiente incompletas', details: 'Headers CNPJ, Usuário, Senha e Banco de Dados são obrigatórios.' });
   }
 
   let connection;
