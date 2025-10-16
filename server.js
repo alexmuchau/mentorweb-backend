@@ -961,7 +961,8 @@ app.get('/api/sync/send-produtos', authenticateEnvironment, async (req, res) => 
     const query = `
       SELECT 
         codigo, 
-        produto, 
+        produto,
+        codigo_interno,
         codigo_barras, 
         preco_venda, 
         estoque, 
