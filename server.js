@@ -1230,8 +1230,8 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
         // 1. Inserir na tabela de pedidos
         const pedidoQuery = `
           INSERT INTO tb_pedidos  
-          (data, hora, id_cliente, id_forma_pagamento, id_local_retirada, total_produtos, id_lcto_erp, status)  
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          (data, hora, id_cliente, id_forma_pagamento, id_local_retirada, total_produtos, id_lcto_erp, observacao, status)  
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
         const [pedidoResult] = await connection.execute(pedidoQuery, [
           pedido.data,
@@ -1241,12 +1241,13 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
           pedido.id_local_retirada || null,
           pedido.total_produtos,
           pedido.id_lcto_erp || null,
+          pedido.observacao || null,
           pedido.status || 'pendente'
         ]);
         const newPedidoId = pedidoResult.insertId;
-
+        
         console.log(`✅ Pedido inserido com ID: ${newPedidoId}`);
-
+        
         // 2. Inserir os produtos do pedido
         if (Array.isArray(pedido.itens) && pedido.itens.length > 0) {
           const produtoQuery = `
