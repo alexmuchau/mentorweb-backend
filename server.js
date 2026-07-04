@@ -11,11 +11,11 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3333;
 
-// Credenciais para sincronizaÃÂÃÂ§ÃÂÃÂ£o de fornecedor
+// Credenciais para sincronizaÃÂÃÂÃÂÃÂ§ÃÂÃÂÃÂÃÂ£o de fornecedor
 const SUPPLIER_SYNC_USER = process.env.SUPPLIER_SYNC_USER || 'mentorweb_fornecedor';
 const SUPPLIER_SYNC_PASS = process.env.SUPPLIER_SYNC_PASS || 'mentorweb_sync_forn_2024';
 
-// Middlewares de seguranÃÂÃÂ§a e performance
+// Middlewares de seguranÃÂÃÂÃÂÃÂ§a e performance
 app.use(helmet());
 app.use(compression());
 app.use(morgan('combined'));
@@ -39,55 +39,55 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Objeto para armazenar pools de conexÃÂÃÂ£o especÃÂÃÂ­ficos por banco de dados
+// Objeto para armazenar pools de conexÃÂÃÂÃÂÃÂ£o especÃÂÃÂÃÂÃÂ­ficos por banco de dados
 const dbPools = {};
 
-// FunÃÂÃÂ§ÃÂÃÂ£o para remover mÃÂÃÂ¡scara de CNPJ/CPF
+// FunÃÂÃÂÃÂÃÂ§ÃÂÃÂÃÂÃÂ£o para remover mÃÂÃÂÃÂÃÂ¡scara de CNPJ/CPF
 const removeDocumentMask = (documento) => {
   if (typeof documento !== 'string') return '';
   return documento.replace(/\D/g, '');
 };
 
 /**
- * FunÃÂÃÂ§ÃÂÃÂ£o para obter ou criar um pool de conexÃÂÃÂ£o para um banco de dados especÃÂÃÂ­fico.
- * A utilizaÃÂÃÂ§ÃÂÃÂ£o de pools de conexÃÂÃÂ£o ÃÂÃÂ© crucial para a performance e escalabilidade,
- * pois evita a sobrecarga de criar e fechar conexÃÂÃÂµes para cada requisiÃÂÃÂ§ÃÂÃÂ£o.
+ * FunÃÂÃÂÃÂÃÂ§ÃÂÃÂÃÂÃÂ£o para obter ou criar um pool de conexÃÂÃÂÃÂÃÂ£o para um banco de dados especÃÂÃÂÃÂÃÂ­fico.
+ * A utilizaÃÂÃÂÃÂÃÂ§ÃÂÃÂÃÂÃÂ£o de pools de conexÃÂÃÂÃÂÃÂ£o ÃÂÃÂÃÂÃÂ© crucial para a performance e escalabilidade,
+ * pois evita a sobrecarga de criar e fechar conexÃÂÃÂÃÂÃÂµes para cada requisiÃÂÃÂÃÂÃÂ§ÃÂÃÂÃÂÃÂ£o.
  * @param {string} databaseName - O nome do banco de dados.
- * @returns {Promise<mysql.Pool>} O pool de conexÃÂÃÂ£o.
+ * @returns {Promise<mysql.Pool>} O pool de conexÃÂÃÂÃÂÃÂ£o.
  */
 async function getDatabasePool(databaseName) {
   if (!databaseName) {
-    throw new Error('Nome do banco de dados nÃÂÃÂ£o fornecido.');
+    throw new Error('Nome do banco de dados nÃÂÃÂÃÂÃÂ£o fornecido.');
   }
 
-  // Se o pool para este banco de dados jÃÂÃÂ¡ existe, retorne-o
+  // Se o pool para este banco de dados jÃÂÃÂÃÂÃÂ¡ existe, retorne-o
   if (dbPools[databaseName]) {
     return dbPools[databaseName];
   }
 
-  // Crie um novo pool de conexÃÂÃÂ£o para o banco de dados especÃÂÃÂ­fico
+  // Crie um novo pool de conexÃÂÃÂÃÂÃÂ£o para o banco de dados especÃÂÃÂÃÂÃÂ­fico
   const newPool = mysql.createPool({
     host: process.env.DB_HOST,
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
-    database: databaseName, // O banco de dados padrÃÂÃÂ£o para este pool
-    port: parseInt(process.env.DB_PORT || 3306), // Adicionado parseInt para garantir que a porta seja um nÃÂÃÂºmero inteiro
+    database: databaseName, // O banco de dados padrÃÂÃÂÃÂÃÂ£o para este pool
+    port: parseInt(process.env.DB_PORT || 3306), // Adicionado parseInt para garantir que a porta seja um nÃÂÃÂÃÂÃÂºmero inteiro
     waitForConnections: true,
-    connectionLimit: 10, // Ajuste conforme a carga do servidor. Um valor de 10 ÃÂÃÂ© um bom ponto de partida.
+    connectionLimit: 10, // Ajuste conforme a carga do servidor. Um valor de 10 ÃÂÃÂÃÂÃÂ© um bom ponto de partida.
     queueLimit: 0
   });
 
-  // Testar a conexÃÂÃÂ£o
+  // Testar a conexÃÂÃÂÃÂÃÂ£o
   try {
     const connection = await newPool.getConnection();
-    await connection.query('SELECT 1'); // Testa a conexÃÂÃÂ£o com uma query simples
+    await connection.query('SELECT 1'); // Testa a conexÃÂÃÂÃÂÃÂ£o com uma query simples
     connection.release();
-    console.log(`Pool de conexÃÂÃÂ£o criado e testado para o banco de dados: ${databaseName}`);
+    console.log(`Pool de conexÃÂÃÂÃÂÃÂ£o criado e testado para o banco de dados: ${databaseName}`);
   } catch (error) {
     console.error(`Erro ao criar ou testar pool para o banco de dados ${databaseName}:`, error);
-    // Em caso de erro na conexÃÂÃÂ£o inicial, remova o pool para que uma nova tentativa possa ser feita
+    // Em caso de erro na conexÃÂÃÂÃÂÃÂ£o inicial, remova o pool para que uma nova tentativa possa ser feita
     delete dbPools[databaseName];
-    throw new Error(`NÃÂÃÂ£o foi possÃÂÃÂ­vel conectar ao banco de dados ${databaseName}.`);
+    throw new Error(`NÃÂÃÂÃÂÃÂ£o foi possÃÂÃÂÃÂÃÂ­vel conectar ao banco de dados ${databaseName}.`);
   }
 
   // Armazene e retorne o novo pool
@@ -95,7 +95,7 @@ async function getDatabasePool(databaseName) {
   return newPool;
 }
 
-// Middleware de autenticaÃÂÃÂ§ÃÂÃÂ£o de ambiente
+// Middleware de autenticaÃÂÃÂÃÂÃÂ§ÃÂÃÂÃÂÃÂ£o de ambiente
 const authenticateEnvironment = async (req, res, next) => {
   const { cnpj, usuario, senha, banco_dados } = req.headers;
 
@@ -106,7 +106,7 @@ const authenticateEnvironment = async (req, res, next) => {
   req.environment = null;
 
   if (!cnpj || !usuario || !senha || !banco_dados) {
-    return res.status(400).json({ error: 'Credenciais de ambiente incompletas', details: 'Headers CNPJ, UsuÃÂÃÂ¡rio, Senha e Banco de Dados sÃÂÃÂ£o obrigatÃÂÃÂ³rios.' });
+    return res.status(400).json({ error: 'Credenciais de ambiente incompletas', details: 'Headers CNPJ, UsuÃÂÃÂÃÂÃÂ¡rio, Senha e Banco de Dados sÃÂÃÂÃÂÃÂ£o obrigatÃÂÃÂÃÂÃÂ³rios.' });
   }
 
   let connection;
@@ -114,7 +114,7 @@ const authenticateEnvironment = async (req, res, next) => {
     // Tenta obter o pool para o banco_dados.
     req.pool = await getDatabasePool(banco_dados);  
 
-    // CASO 1: AutenticaÃÂÃÂ§ÃÂÃÂ£o para Fornecedor (credenciais de sistema)
+    // CASO 1: AutenticaÃÂÃÂÃÂÃÂ§ÃÂÃÂÃÂÃÂ£o para Fornecedor (credenciais de sistema)
     if (usuario === SUPPLIER_SYNC_USER && senha === SUPPLIER_SYNC_PASS) {
       req.isSupplierAuth = true;
       req.environment = { cnpj, usuario, tipo: 'fornecedor_sync' };
@@ -122,7 +122,7 @@ const authenticateEnvironment = async (req, res, next) => {
       return next();
     }
     
-    // CASO 2: AutenticaÃÂÃÂ§ÃÂÃÂ£o para ClienteApp (credenciais do ambiente do cliente)
+    // CASO 2: AutenticaÃÂÃÂÃÂÃÂ§ÃÂÃÂÃÂÃÂ£o para ClienteApp (credenciais do ambiente do cliente)
     connection = await req.pool.getConnection();
     const [rows] = await connection.execute(
       'SELECT * FROM tb_ambientes WHERE cnpj = ? AND usuario = ? AND senha = ? AND ativo = "S"',
@@ -136,14 +136,14 @@ const authenticateEnvironment = async (req, res, next) => {
       return next();
     }
 
-    // Se nenhuma autenticaÃÂÃÂ§ÃÂÃÂ£o for bem-sucedida
-    console.warn(`Falha na autenticaÃÂÃÂ§ÃÂÃÂ£o do ambiente para CNPJ: ${cnpj} e UsuÃÂÃÂ¡rio: ${usuario}`);
-    return res.status(401).json({ error: 'Credenciais de ambiente invÃÂÃÂ¡lidas ou inativas.' });
+    // Se nenhuma autenticaÃÂÃÂÃÂÃÂ§ÃÂÃÂÃÂÃÂ£o for bem-sucedida
+    console.warn(`Falha na autenticaÃÂÃÂÃÂÃÂ§ÃÂÃÂÃÂÃÂ£o do ambiente para CNPJ: ${cnpj} e UsuÃÂÃÂÃÂÃÂ¡rio: ${usuario}`);
+    return res.status(401).json({ error: 'Credenciais de ambiente invÃÂÃÂÃÂÃÂ¡lidas ou inativas.' });
 
   } catch (error) {
     console.error(`Erro no middleware authenticateEnvironment para banco ${banco_dados}:`, error);
-    if (error.message && error.message.includes('NÃÂÃÂ£o foi possÃÂÃÂ­vel conectar ao banco de dados')) {
-        return res.status(401).json({ error: 'Falha na conexÃÂÃÂ£o com o banco de dados do ambiente.', details: error.message });
+    if (error.message && error.message.includes('NÃÂÃÂÃÂÃÂ£o foi possÃÂÃÂÃÂÃÂ­vel conectar ao banco de dados')) {
+        return res.status(401).json({ error: 'Falha na conexÃÂÃÂÃÂÃÂ£o com o banco de dados do ambiente.', details: error.message });
     }
     if (error.sqlMessage) {  
         return res.status(500).json({ error: 'Erro no banco de dados', details: error.sqlMessage });
@@ -161,18 +161,18 @@ app.get('/api/health', (req, res) => {
 
 // ROTAS PARA FORNECEDOR
 
-// ROTA ESPECIAL: AutenticaÃÂÃÂ§ÃÂÃÂ£o de usuÃÂÃÂ¡rio fornecedor (NÃÂÃÂO USA authenticateEnvironment)
+// ROTA ESPECIAL: AutenticaÃÂÃÂÃÂÃÂ§ÃÂÃÂÃÂÃÂ£o de usuÃÂÃÂÃÂÃÂ¡rio fornecedor (NÃÂÃÂÃÂÃÂO USA authenticateEnvironment)
 app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
   const { cnpj_cpf, usuario, senha } = req.body;
   const { 'banco_dados': banco_dados, 'usuario': headerUser, 'senha': headerPass } = req.headers;
 
-  // ValidaÃÂÃÂ§ÃÂÃÂ£o dos headers de sistema
+  // ValidaÃÂÃÂÃÂÃÂ§ÃÂÃÂÃÂÃÂ£o dos headers de sistema
   if (headerUser !== SUPPLIER_SYNC_USER || headerPass !== SUPPLIER_SYNC_PASS) {
-      return res.status(401).json({ error: "Credenciais de sincronizaÃÂÃÂ§ÃÂÃÂ£o de fornecedor invÃÂÃÂ¡lidas nos headers." });
+      return res.status(401).json({ error: "Credenciais de sincronizaÃÂÃÂÃÂÃÂ§ÃÂÃÂÃÂÃÂ£o de fornecedor invÃÂÃÂÃÂÃÂ¡lidas nos headers." });
   }
 
   if (!cnpj_cpf || !usuario || !senha || !banco_dados) {
-    return res.status(400).json({ error: 'Dados de autenticaÃÂÃÂ§ÃÂÃÂ£o incompletos.' });
+    return res.status(400).json({ error: 'Dados de autenticaÃÂÃÂÃÂÃÂ§ÃÂÃÂÃÂÃÂ£o incompletos.' });
   }
 
   let connection;
@@ -180,7 +180,7 @@ app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
     const pool = await getDatabasePool(banco_dados);
     connection = await pool.getConnection();
 
-    // REMOVEMOS A MÃÂÃÂSCARA ANTES DE CONSULTAR O BANCO DE DADOS
+    // REMOVEMOS A MÃÂÃÂÃÂÃÂSCARA ANTES DE CONSULTAR O BANCO DE DADOS
     const documentoSemMascara = removeDocumentMask(cnpj_cpf);
 
     const [rows] = await connection.execute(
@@ -191,7 +191,7 @@ app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
     if (rows.length === 0) {
       return res.status(401).json({  
         success: false,  
-        error: "Credenciais invÃÂÃÂ¡lidas ou usuÃÂÃÂ¡rio inativo."  
+        error: "Credenciais invÃÂÃÂÃÂÃÂ¡lidas ou usuÃÂÃÂÃÂÃÂ¡rio inativo."  
       });
     }
 
@@ -213,10 +213,10 @@ app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
      });
 
   } catch (error) {
-    console.error('Erro ao autenticar usuÃÂÃÂ¡rio fornecedor:', error);
+    console.error('Erro ao autenticar usuÃÂÃÂÃÂÃÂ¡rio fornecedor:', error);
     res.status(500).json({
       success: false,
-      error: 'Erro interno do servidor ao autenticar usuÃÂÃÂ¡rio.',
+      error: 'Erro interno do servidor ao autenticar usuÃÂÃÂÃÂÃÂ¡rio.',
       details: error.message
     });
   } finally {
@@ -225,7 +225,7 @@ app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
     }
   }
 });
-// ROTA: Enviar pedido para fornecedor (VERSÃÂÃÂO CORRIGIDA COM NOMES CORRETOS DOS CAMPOS)
+// ROTA: Enviar pedido para fornecedor (VERSÃÂÃÂÃÂÃÂO CORRIGIDA COM NOMES CORRETOS DOS CAMPOS)
 app.post('/api/sync/send-pedido-fornecedor', authenticateEnvironment, async (req, res) => {
   if (!req.isClientAppAuth) {
     return res.status(403).json({ error: 'Acesso negado. Apenas clientes podem enviar pedidos para o fornecedor.' });
@@ -319,11 +319,11 @@ app.post('/api/sync/send-pedido-fornecedor', authenticateEnvironment, async (req
   }
 });
 
-// ROTA: Receber pedido do fornecedor - VERSÃÂÃÂO FINALMENTE CORRIGIDA (SEM identificador_cliente_item EM PRODUTOS)
+// ROTA: Receber pedido do fornecedor - VERSÃÂÃÂÃÂÃÂO FINALMENTE CORRIGIDA (SEM identificador_cliente_item EM PRODUTOS)
 app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (req, res) => {
   if (!req.isSupplierAuth) {
     return res.status(403).json({
-      error: 'Acesso negado. Apenas sincronizaÃÂÃÂ§ÃÂÃÂ£o de fornecedor pode receber pedidos.'
+      error: 'Acesso negado. Apenas sincronizaÃÂÃÂÃÂÃÂ§ÃÂÃÂÃÂÃÂ£o de fornecedor pode receber pedidos.'
     });
   }
 
@@ -338,14 +338,14 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
     connection = await pool.getConnection();
     await connection.beginTransaction();
 
-    // Converte a data do pedido para o fuso de SÃÂÃÂ£o Paulo no formato do MySQL
+    // Converte a data do pedido para o fuso de SÃÂÃÂÃÂÃÂ£o Paulo no formato do MySQL
     const dataPedidoCliente = new Date(pedidoData.data_pedido);
     const dataFormatada = dataPedidoCliente.toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }).slice(0, 19);
 
     // 1. Inserir pedido principal (tb_Pedidos_Fornecedor)
-    // ATENÃÂÃÂÃÂÃÂO: As colunas `nome_cliente`, `contato` e `identificador_cliente_item` devem ser incluÃÂÃÂ­das aqui
-    // se o frontend estiver enviando para esta rota e vocÃÂÃÂª quiser que sejam salvas na tabela tb_Pedidos_Fornecedor.
-    // Baseado nas ÃÂÃÂºltimas discussÃÂÃÂµes, essa rota ÃÂÃÂ© chamada pela pÃÂÃÂ¡gina PedidosFornecedorIntegrado (que nÃÂÃÂ£o envia nome_cliente/contato/identificador_cliente_item diretamente no pedidoData)
+    // ATENÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂO: As colunas `nome_cliente`, `contato` e `identificador_cliente_item` devem ser incluÃÂÃÂÃÂÃÂ­das aqui
+    // se o frontend estiver enviando para esta rota e vocÃÂÃÂÃÂÃÂª quiser que sejam salvas na tabela tb_Pedidos_Fornecedor.
+    // Baseado nas ÃÂÃÂÃÂÃÂºltimas discussÃÂÃÂÃÂÃÂµes, essa rota ÃÂÃÂÃÂÃÂ© chamada pela pÃÂÃÂÃÂÃÂ¡gina PedidosFornecedorIntegrado (que nÃÂÃÂÃÂÃÂ£o envia nome_cliente/contato/identificador_cliente_item diretamente no pedidoData)
     // e pela "action: send_pedido_fornecedor" do erpSync, que por sua vez envia esses campos.
     // Para ser robusto, vou incluir esses campos na query, assumindo que eles podem vir no `pedidoData`.
     const [pedidoResult] = await connection.execute(`
@@ -362,7 +362,7 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
       dataFormatada,
       pedidoData.id_ambiente,
       pedidoData.total_pedido,
-      'pendente', // Status padrÃÂÃÂ£o = 'pendente'
+      'pendente', // Status padrÃÂÃÂÃÂÃÂ£o = 'pendente'
       pedidoData.nome_cliente || null, // Novo campo
       pedidoData.contato || null,      // Novo campo
       pedidoData.identificador_cliente_item || null // Campo movido
@@ -373,7 +373,7 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
 
     // 2. Inserir produtos do pedido (tb_Pedidos_Produtos_Fornecedor)
     for (const produto of pedidoData.produtos) {
-      // CORREÃÂÃÂÃÂÃÂO: REMOVIDO "identificador_cliente_item" DAQUI, pois foi movido para a tabela de cabeÃÂÃÂ§alho
+      // CORREÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂO: REMOVIDO "identificador_cliente_item" DAQUI, pois foi movido para a tabela de cabeÃÂÃÂÃÂÃÂ§alho
       await connection.execute(`
         INSERT INTO tb_Pedidos_Produtos_Fornecedor (
           id_pedido,
@@ -428,13 +428,13 @@ app.post('/api/sync/receive-pedido-cliente-fornecedor', authenticateEnvironment,
     data_pedido,
     nome_cliente, // NOVO: Nome do cliente
     contato, // NOVO: Contato do cliente
-    identificador_cliente_item // NOVO: Identificador agora no nÃÂÃÂ­vel do pedido
+    identificador_cliente_item // NOVO: Identificador agora no nÃÂÃÂÃÂÃÂ­vel do pedido
   } = pedidoData;
 
-  console.log(`ÃÂ°ÃÂÃÂÃÂ Dados do pedido recebidos de cliente para fornecedor no banco ${banco_dados_fornecedor}:`);
+  console.log(`ÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂ Dados do pedido recebidos de cliente para fornecedor no banco ${banco_dados_fornecedor}:`);
   console.log(JSON.stringify(pedidoData, null, 2));
 
-  // ValidaÃÂÃÂ§ÃÂÃÂ£o bÃÂÃÂ¡sica dos dados do pedido
+  // ValidaÃÂÃÂÃÂÃÂ§ÃÂÃÂÃÂÃÂ£o bÃÂÃÂÃÂÃÂ¡sica dos dados do pedido
   if (
     !banco_dados_fornecedor ||
     !id_ambiente ||
@@ -443,22 +443,22 @@ app.post('/api/sync/receive-pedido-cliente-fornecedor', authenticateEnvironment,
     produtos.length === 0 ||
     !data_pedido
   ) {
-    console.warn('ÃÂ¢ÃÂÃÂ DADOS DO PEDIDO INVÃÂÃÂLIDOS OU INCOMPLETOS.');
+    console.warn('ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ DADOS DO PEDIDO INVÃÂÃÂÃÂÃÂLIDOS OU INCOMPLETOS.');
     return res.status(400).json({
       success: false,
-      error: 'Dados do pedido invÃÂÃÂ¡lidos ou incompletos.',
-      details: 'banco_dados (header), id_ambiente, total_pedido, produtos (array nÃÂÃÂ£o vazio) e data_pedido sÃÂÃÂ£o obrigatÃÂÃÂ³rios.'
+      error: 'Dados do pedido invÃÂÃÂÃÂÃÂ¡lidos ou incompletos.',
+      details: 'banco_dados (header), id_ambiente, total_pedido, produtos (array nÃÂÃÂÃÂÃÂ£o vazio) e data_pedido sÃÂÃÂÃÂÃÂ£o obrigatÃÂÃÂÃÂÃÂ³rios.'
     });
   }
 
   let connection;
   try {
-    console.log(`ÃÂ°ÃÂÃÂÃÂ Conectando ao banco de dados do fornecedor: ${banco_dados_fornecedor}`);
+    console.log(`ÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂ Conectando ao banco de dados do fornecedor: ${banco_dados_fornecedor}`);
     const pool = await getDatabasePool(banco_dados_fornecedor);
     connection = await pool.getConnection();
     await connection.beginTransaction();
 
-    // Converte a data do pedido para o fuso de SÃÂÃÂ£o Paulo no formato do MySQL DATETIME
+    // Converte a data do pedido para o fuso de SÃÂÃÂÃÂÃÂ£o Paulo no formato do MySQL DATETIME
     const dataPedidoProcessada = new Date(data_pedido).toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }).slice(0, 19);
 
     // 1. Inserir na tb_Pedidos_Fornecedor (COM identificador_cliente_item, nome_cliente, contato)
@@ -478,7 +478,7 @@ app.post('/api/sync/receive-pedido-cliente-fornecedor', authenticateEnvironment,
       dataPedidoProcessada,           // data_hora_lancamento
       id_ambiente,                    // id_ambiente
       total_pedido,                   // valor_total
-      'pendente',                     // status (padrÃÂÃÂ£o)
+      'pendente',                     // status (padrÃÂÃÂÃÂÃÂ£o)
       null,                           // id_pedido_sistema_externo (NULL inicialmente)
       nome_cliente || null,           // nome_cliente
       contato || null,                // contato
@@ -486,7 +486,7 @@ app.post('/api/sync/receive-pedido-cliente-fornecedor', authenticateEnvironment,
     ]);
 
     const newPedidoId = pedidoResult.insertId;
-    console.log(`ÃÂ¢ÃÂÃÂ Pedido inserido na tb_Pedidos_Fornecedor com ID: ${newPedidoId}`);
+    console.log(`ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ Pedido inserido na tb_Pedidos_Fornecedor com ID: ${newPedidoId}`);
 
     // 2. Inserir na tb_Pedidos_Produtos_Fornecedor (SEM identificador_cliente_item)
     const produtoQuery = `
@@ -509,10 +509,10 @@ app.post('/api/sync/receive-pedido-cliente-fornecedor', authenticateEnvironment,
     ]);
 
     await connection.query(produtoQuery, [produtosValues]);
-    console.log(`ÃÂ¢ÃÂÃÂ ${produtosValues.length} produtos inseridos para o pedido ${newPedidoId}.`);
+    console.log(`ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ ${produtosValues.length} produtos inseridos para o pedido ${newPedidoId}.`);
 
     await connection.commit();
-    console.log(`ÃÂ°ÃÂÃÂÃÂ Pedido ${newPedidoId} processado e commitado com sucesso.`);
+    console.log(`ÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂ Pedido ${newPedidoId} processado e commitado com sucesso.`);
 
     return res.status(200).json({
       success: true,
@@ -521,7 +521,7 @@ app.post('/api/sync/receive-pedido-cliente-fornecedor', authenticateEnvironment,
     });
 
   } catch (error) {
-    console.error('ÃÂ¢ÃÂÃÂ Erro ao salvar pedido de cliente para fornecedor:', error);
+    console.error('ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ Erro ao salvar pedido de cliente para fornecedor:', error);
     if (connection) await connection.rollback();
     return res.status(500).json({
       success: false,
@@ -532,14 +532,14 @@ app.post('/api/sync/receive-pedido-cliente-fornecedor', authenticateEnvironment,
     if (connection) connection.release();
   }
 });
-// ROTA: Buscar produtos do fornecedor (VERSÃÂÃÂO ATUALIZADA COM q_minimo E q_multiplo)
+// ROTA: Buscar produtos do fornecedor (VERSÃÂÃÂÃÂÃÂO ATUALIZADA COM q_minimo E q_multiplo)
 app.get('/api/sync/send-produtos-fornecedor', authenticateEnvironment, async (req, res) => {
-  // Apenas credenciais de sincronizaÃÂÃÂ§ÃÂÃÂ£o de fornecedor podem usar esta rota
+  // Apenas credenciais de sincronizaÃÂÃÂÃÂÃÂ§ÃÂÃÂÃÂÃÂ£o de fornecedor podem usar esta rota
   if (!req.isSupplierAuth) {
-    return res.status(403).json({ error: 'Acesso negado. Apenas sincronizaÃÂÃÂ§ÃÂÃÂ£o de fornecedor pode buscar produtos.' });
+    return res.status(403).json({ error: 'Acesso negado. Apenas sincronizaÃÂÃÂÃÂÃÂ§ÃÂÃÂÃÂÃÂ£o de fornecedor pode buscar produtos.' });
   }
 
-  const { banco_dados } = req.headers; // O banco de dados do fornecedor estÃÂÃÂ¡ nos headers
+  const { banco_dados } = req.headers; // O banco de dados do fornecedor estÃÂÃÂÃÂÃÂ¡ nos headers
 
   let connection;
   try {
@@ -554,9 +554,9 @@ app.get('/api/sync/send-produtos-fornecedor', authenticateEnvironment, async (re
     // Formatar dados para garantir tipos corretos
     const produtos = rows.map(p => ({
       ...p,
-      preco_unitario: parseFloat(p.preco_unitario), // Garante que seja um nÃÂÃÂºmero
-      q_minimo: parseInt(p.q_minimo) || 1,           // Garante que seja INT, padrÃÂÃÂ£o 1
-      q_multiplo: parseInt(p.q_multiplo) || 1        // Garante que seja INT, padrÃÂÃÂ£o 1
+      preco_unitario: parseFloat(p.preco_unitario), // Garante que seja um nÃÂÃÂÃÂÃÂºmero
+      q_minimo: parseInt(p.q_minimo) || 1,           // Garante que seja INT, padrÃÂÃÂÃÂÃÂ£o 1
+      q_multiplo: parseInt(p.q_multiplo) || 1        // Garante que seja INT, padrÃÂÃÂÃÂÃÂ£o 1
     }));
 
     console.log(`Produtos do fornecedor encontrados (${banco_dados}): ${produtos.length}`);
@@ -578,15 +578,15 @@ app.get('/api/sync/send-produtos-fornecedor', authenticateEnvironment, async (re
   }
 });
 
-// --- ROTA DE ADMINISTRAÃÂÃÂÃÂÃÂO PARA INATIVAR USUÃÂÃÂRIO FORNECEDOR ---
-// Este endpoint ÃÂÃÂ© destinado a ser chamado por um processo administrativo da MentorWeb
-// (como o Painel DEV ou o mÃÂÃÂ³dulo de ConfiguraÃÂÃÂ§ÃÂÃÂµes da Empresa ERP) para gerenciar
-// o status de usuÃÂÃÂ¡rios no ERP de um fornecedor.
+// --- ROTA DE ADMINISTRAÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂO PARA INATIVAR USUÃÂÃÂÃÂÃÂRIO FORNECEDOR ---
+// Este endpoint ÃÂÃÂÃÂÃÂ© destinado a ser chamado por um processo administrativo da MentorWeb
+// (como o Painel DEV ou o mÃÂÃÂÃÂÃÂ³dulo de ConfiguraÃÂÃÂÃÂÃÂ§ÃÂÃÂÃÂÃÂµes da Empresa ERP) para gerenciar
+// o status de usuÃÂÃÂÃÂÃÂ¡rios no ERP de um fornecedor.
 app.post('/api/erp/inativar-usuario-fornecedor', async (req, res) => {
-  console.log('ÃÂ°ÃÂÃÂÃÂ INICIANDO PROCESSO DE INATIVAÃÂÃÂÃÂÃÂO DE USUÃÂÃÂRIO FORNECEDOR');
+  console.log('ÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂ INICIANDO PROCESSO DE INATIVAÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂO DE USUÃÂÃÂÃÂÃÂRIO FORNECEDOR');
 
-  // Credenciais de sistema para esta rota, se necessÃÂÃÂ¡rio.
-  // IMPORTANTE: Ajuste estas credenciais para algo seguro e especÃÂÃÂ­fico do seu ambiente.
+  // Credenciais de sistema para esta rota, se necessÃÂÃÂÃÂÃÂ¡rio.
+  // IMPORTANTE: Ajuste estas credenciais para algo seguro e especÃÂÃÂÃÂÃÂ­fico do seu ambiente.
   const SYSTEM_ADMIN_USER = 'admin_sistema';
   const SYSTEM_ADMIN_PASS = 'admin_inativar_2024';
 
@@ -596,99 +596,99 @@ app.post('/api/erp/inativar-usuario-fornecedor', async (req, res) => {
   const headerUser = req.headers['usuario'];
   const headerPass = req.headers['senha'];
 
-  console.log('ÃÂ°ÃÂÃÂÃÂ DADOS RECEBIDOS PARA INATIVAÃÂÃÂÃÂÃÂO:');
-  console.log(`   - UsuÃÂÃÂ¡rio a inativar: ${usuario}`);
-  console.log(`   - CNPJ/CPF do usuÃÂÃÂ¡rio: ${cnpj_cpf}`);
+  console.log('ÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂ DADOS RECEBIDOS PARA INATIVAÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂO:');
+  console.log(`   - UsuÃÂÃÂÃÂÃÂ¡rio a inativar: ${usuario}`);
+  console.log(`   - CNPJ/CPF do usuÃÂÃÂÃÂÃÂ¡rio: ${cnpj_cpf}`);
   console.log(`   - Banco de dados: ${banco_dados}`);
-  console.log(`   - Motivo da inativaÃÂÃÂ§ÃÂÃÂ£o: ${motivo || 'NÃÂÃÂ£o especificado'}`);
+  console.log(`   - Motivo da inativaÃÂÃÂÃÂÃÂ§ÃÂÃÂÃÂÃÂ£o: ${motivo || 'NÃÂÃÂÃÂÃÂ£o especificado'}`);
   console.log(`   - Header Usuario (Sistema): ${headerUser}`);
   console.log(`   - Header tem senha (Sistema): ${!!headerPass}`);
 
-  // ValidaÃÂÃÂ§ÃÂÃÂ£o das credenciais de sistema
+  // ValidaÃÂÃÂÃÂÃÂ§ÃÂÃÂÃÂÃÂ£o das credenciais de sistema
   if (headerUser !== SYSTEM_ADMIN_USER || headerPass !== SYSTEM_ADMIN_PASS) {
-    console.warn('ÃÂ¢ÃÂÃÂ FALHA NA VALIDAÃÂÃÂÃÂÃÂO DOS HEADERS DE SISTEMA PARA INATIVAÃÂÃÂÃÂÃÂO');
-    return res.status(401).json({ error: "Credenciais de sistema invÃÂÃÂ¡lidas para inativaÃÂÃÂ§ÃÂÃÂ£o." });
+    console.warn('ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ FALHA NA VALIDAÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂO DOS HEADERS DE SISTEMA PARA INATIVAÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂO');
+    return res.status(401).json({ error: "Credenciais de sistema invÃÂÃÂÃÂÃÂ¡lidas para inativaÃÂÃÂÃÂÃÂ§ÃÂÃÂÃÂÃÂ£o." });
   }
 
   if (!cnpj_cpf || !usuario || !banco_dados) {
-    console.warn('ÃÂ¢ÃÂÃÂ DADOS DE INATIVAÃÂÃÂÃÂÃÂO INCOMPLETOS');
-    return res.status(400).json({ error: 'Dados de inativaÃÂÃÂ§ÃÂÃÂ£o incompletos (cnpj_cpf, usuario, banco_dados sÃÂÃÂ£o obrigatÃÂÃÂ³rios).' });
+    console.warn('ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ DADOS DE INATIVAÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂO INCOMPLETOS');
+    return res.status(400).json({ error: 'Dados de inativaÃÂÃÂÃÂÃÂ§ÃÂÃÂÃÂÃÂ£o incompletos (cnpj_cpf, usuario, banco_dados sÃÂÃÂÃÂÃÂ£o obrigatÃÂÃÂÃÂÃÂ³rios).' });
   }
 
   let connection;
   try {
-    console.log(`ÃÂ°ÃÂÃÂÃÂ CONECTANDO AO BANCO PARA INATIVAR USUÃÂÃÂRIO: ${banco_dados}`);
+    console.log(`ÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂ CONECTANDO AO BANCO PARA INATIVAR USUÃÂÃÂÃÂÃÂRIO: ${banco_dados}`);
     const pool = await getDatabasePool(banco_dados); // Supondo que getDatabasePool esteja definido
     connection = await pool.getConnection();
-    console.log('ÃÂ¢ÃÂÃÂ ConexÃÂÃÂ£o obtida com sucesso para inativaÃÂÃÂ§ÃÂÃÂ£o');
+    console.log('ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ ConexÃÂÃÂÃÂÃÂ£o obtida com sucesso para inativaÃÂÃÂÃÂÃÂ§ÃÂÃÂÃÂÃÂ£o');
 
-    // Remover mÃÂÃÂ¡scara do documento
+    // Remover mÃÂÃÂÃÂÃÂ¡scara do documento
     const documentoLimpo = removeDocumentMask(cnpj_cpf); // Supondo que removeDocumentMask esteja definido
-    console.log(`ÃÂ°ÃÂÃÂÃÂ Documento limpo: ${documentoLimpo}`);
+    console.log(`ÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂ Documento limpo: ${documentoLimpo}`);
 
-    console.log('ÃÂ°ÃÂÃÂÃÂ EXECUTANDO QUERY DE INATIVAÃÂÃÂÃÂÃÂO:');
+    console.log('ÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂ EXECUTANDO QUERY DE INATIVAÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂO:');
     const [result] = await connection.execute(
       `UPDATE tb_Ambientes_Fornecedor SET Ativo = 'N' WHERE Documento = ? AND usuario = ?`,
       [documentoLimpo, usuario]
     );
 
-    console.log(`ÃÂ°ÃÂÃÂÃÂ RESULTADO DA INATIVAÃÂÃÂÃÂÃÂO: ${result.affectedRows} usuÃÂÃÂ¡rio(s) inativado(s)`);
+    console.log(`ÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂ RESULTADO DA INATIVAÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂO: ${result.affectedRows} usuÃÂÃÂÃÂÃÂ¡rio(s) inativado(s)`);
 
     if (result.affectedRows === 0) {
       return res.status(404).json({
         success: false,
-        error: "Nenhum usuÃÂÃÂ¡rio encontrado com os dados fornecidos para inativaÃÂÃÂ§ÃÂÃÂ£o."
+        error: "Nenhum usuÃÂÃÂÃÂÃÂ¡rio encontrado com os dados fornecidos para inativaÃÂÃÂÃÂÃÂ§ÃÂÃÂÃÂÃÂ£o."
       });
     }
 
     res.json({
       success: true,
-      message: `UsuÃÂÃÂ¡rio ${usuario} (documento: ${cnpj_cpf}) inativado com sucesso.`,
+      message: `UsuÃÂÃÂÃÂÃÂ¡rio ${usuario} (documento: ${cnpj_cpf}) inativado com sucesso.`,
       usuarios_afetados: result.affectedRows
     });
 
   } catch (error) {
-    console.error('ÃÂ¢ÃÂÃÂ ERRO CRÃÂÃÂTICO DURANTE INATIVAÃÂÃÂÃÂÃÂO:', error);
+    console.error('ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ ERRO CRÃÂÃÂÃÂÃÂTICO DURANTE INATIVAÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂO:', error);
     res.status(500).json({
       success: false,
-      error: 'Erro interno do servidor ao inativar usuÃÂÃÂ¡rio.',
+      error: 'Erro interno do servidor ao inativar usuÃÂÃÂÃÂÃÂ¡rio.',
       details: error.message
     });
   } finally {
     if (connection) {
       connection.release();
-      console.log('ÃÂ°ÃÂÃÂÃÂ ConexÃÂÃÂ£o liberada de volta ao pool para inativaÃÂÃÂ§ÃÂÃÂ£o');
+      console.log('ÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂ ConexÃÂÃÂÃÂÃÂ£o liberada de volta ao pool para inativaÃÂÃÂÃÂÃÂ§ÃÂÃÂÃÂÃÂ£o');
     }
   }
 });
 
 // === ROTA: Buscar ambientes do fornecedor ===
 app.get('/api/sync/send-ambientes-fornecedor', async (req, res) => {
-  console.log('ÃÂ°ÃÂÃÂÃÂ³ REQUISIÃÂÃÂÃÂÃÂO PARA BUSCAR AMBIENTES DO FORNECEDOR');
+  console.log('ÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂ³ REQUISIÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂO PARA BUSCAR AMBIENTES DO FORNECEDOR');
   
   const banco_dados = req.headers['banco_dados'];
   const cnpj = req.headers['cnpj'];
   const headerUser = req.headers['usuario'];
   const headerPass = req.headers['senha'];
 
-  console.log('ÃÂ°ÃÂÃÂÃÂ DADOS RECEBIDOS:');
+  console.log('ÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂ DADOS RECEBIDOS:');
   console.log(`   - Banco de dados: ${banco_dados}`);
   console.log(`   - CNPJ: ${cnpj}`);
   console.log(`   - Header Usuario: ${headerUser}`);
 
-  // ValidaÃÂÃÂ§ÃÂÃÂ£o das credenciais
+  // ValidaÃÂÃÂÃÂÃÂ§ÃÂÃÂÃÂÃÂ£o das credenciais
   if (headerUser !== 'mentorweb_fornecedor' || headerPass !== 'mentorweb_sync_forn_2024') {
-    console.warn('ÃÂ¢ÃÂÃÂ CREDENCIAIS DE SISTEMA INVÃÂÃÂLIDAS');
-    return res.status(401).json({ error: "Credenciais de sincronizaÃÂÃÂ§ÃÂÃÂ£o invÃÂÃÂ¡lidas." });
+    console.warn('ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ CREDENCIAIS DE SISTEMA INVÃÂÃÂÃÂÃÂLIDAS');
+    return res.status(401).json({ error: "Credenciais de sincronizaÃÂÃÂÃÂÃÂ§ÃÂÃÂÃÂÃÂ£o invÃÂÃÂÃÂÃÂ¡lidas." });
   }
 
   if (!banco_dados) {
-    return res.status(400).json({ error: 'Banco de dados nÃÂÃÂ£o especificado no header.' });
+    return res.status(400).json({ error: 'Banco de dados nÃÂÃÂÃÂÃÂ£o especificado no header.' });
   }
 
   let connection;
   try {
-    console.log(`ÃÂ°ÃÂÃÂÃÂ CONECTANDO AO BANCO: ${banco_dados}`);
+    console.log(`ÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂ CONECTANDO AO BANCO: ${banco_dados}`);
     const pool = await getDatabasePool(banco_dados);
     connection = await pool.getConnection();
     
@@ -696,7 +696,7 @@ app.get('/api/sync/send-ambientes-fornecedor', async (req, res) => {
        `SELECT Codigo as id, Nome as nome, ID_Pessoa, Documento, d_entrega, dias_bloqueio_pedidos FROM tb_Ambientes_Fornecedor WHERE Ativo = 'S' ORDER BY Nome`
    );
     
-    console.log(`ÃÂ°ÃÂÃÂÃÂ³ Ambientes encontrados: ${rows.length}`);
+    console.log(`ÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂ³ Ambientes encontrados: ${rows.length}`);
     
     res.json({
       success: true,
@@ -704,7 +704,7 @@ app.get('/api/sync/send-ambientes-fornecedor', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('ÃÂ¢ÃÂÃÂ ERRO AO BUSCAR AMBIENTES:', error);
+    console.error('ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ ERRO AO BUSCAR AMBIENTES:', error);
     res.status(500).json({ 
       success: false, 
       error: 'Erro ao buscar ambientes no ERP do fornecedor.', 
@@ -713,25 +713,25 @@ app.get('/api/sync/send-ambientes-fornecedor', async (req, res) => {
   } finally {
     if (connection) {
       connection.release();
-      console.log('ÃÂ°ÃÂÃÂÃÂ ConexÃÂÃÂ£o liberada para busca de ambientes');
+      console.log('ÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂ ConexÃÂÃÂÃÂÃÂ£o liberada para busca de ambientes');
     }
   }
 });
 
-// ROTA: Buscar produtos do fornecedor PARA UM CLIENTE ESPECÃÂÃÂFICO (Pedidos Fornecedor Integrado)
+// ROTA: Buscar produtos do fornecedor PARA UM CLIENTE ESPECÃÂÃÂÃÂÃÂFICO (Pedidos Fornecedor Integrado)
 app.post('/api/sync/send-produtos-fornecedor-para-cliente', authenticateEnvironment, async (req, res) => {
-  console.log('ÃÂ°ÃÂÃÂÃÂ¦ REQUISIÃÂÃÂÃÂÃÂO PARA BUSCAR PRODUTOS DO FORNECEDOR PARA UM CLIENTE ESPECÃÂÃÂFICO');
+  console.log('ÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂ¦ REQUISIÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂO PARA BUSCAR PRODUTOS DO FORNECEDOR PARA UM CLIENTE ESPECÃÂÃÂÃÂÃÂFICO');
   
   const { id_ambiente_fornecedor } = req.body;
   const banco_dados = req.headers['banco_dados'];
 
-  console.log('ÃÂ°ÃÂÃÂÃÂ DADOS RECEBIDOS:');
+  console.log('ÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂ DADOS RECEBIDOS:');
   console.log(`   - Banco de dados: ${banco_dados}`);
   console.log(`   - ID do Ambiente do Cliente: ${id_ambiente_fornecedor}`);
 
   if (!banco_dados || !id_ambiente_fornecedor) {
-    console.warn('ÃÂ¢ÃÂÃÂ DADOS INCOMPLETOS: Banco de dados e id_ambiente_fornecedor sÃÂÃÂ£o obrigatÃÂÃÂ³rios.');
-    return res.status(400).json({ error: 'Banco de dados e id_ambiente_fornecedor sÃÂÃÂ£o obrigatÃÂÃÂ³rios.' });
+    console.warn('ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ DADOS INCOMPLETOS: Banco de dados e id_ambiente_fornecedor sÃÂÃÂÃÂÃÂ£o obrigatÃÂÃÂÃÂÃÂ³rios.');
+    return res.status(400).json({ error: 'Banco de dados e id_ambiente_fornecedor sÃÂÃÂÃÂÃÂ£o obrigatÃÂÃÂÃÂÃÂ³rios.' });
   }
 
   let connection;
@@ -755,16 +755,16 @@ app.post('/api/sync/send-produtos-fornecedor-para-cliente', authenticateEnvironm
 
     const produtos = rows.map(p => ({
       id: p.id,
-      codigo: p.id, // Adicionando campo 'codigo' tambÃÂÃÂ©m
+      codigo: p.id, // Adicionando campo 'codigo' tambÃÂÃÂÃÂÃÂ©m
       nome: p.nome,
-      produto: p.nome, // Adicionando campo 'produto' tambÃÂÃÂ©m
+      produto: p.nome, // Adicionando campo 'produto' tambÃÂÃÂÃÂÃÂ©m
       preco_unitario: parseFloat(p.preco_unitario || 0),
       q_minimo: parseInt(p.q_minimo) || 1, // NOVO CAMPO
       q_multiplo: parseInt(p.q_multiplo) || 1, // NOVO CAMPO
       ativo: p.Ativo
     }));
     
-    console.log(`ÃÂ°ÃÂÃÂÃÂ¦ Produtos encontrados para o cliente (ambiente ${id_ambiente_fornecedor}) no banco ${banco_dados}: ${produtos.length} itens.`);
+    console.log(`ÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂ¦ Produtos encontrados para o cliente (ambiente ${id_ambiente_fornecedor}) no banco ${banco_dados}: ${produtos.length} itens.`);
     
     res.json({
       success: true,
@@ -773,7 +773,7 @@ app.post('/api/sync/send-produtos-fornecedor-para-cliente', authenticateEnvironm
     });
 
   } catch (error) {
-    console.error(`ÃÂ¢ÃÂÃÂ ERRO AO BUSCAR PRODUTOS PARA O CLIENTE (ambiente ${id_ambiente_fornecedor}, banco ${banco_dados}):`, error);
+    console.error(`ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ ERRO AO BUSCAR PRODUTOS PARA O CLIENTE (ambiente ${id_ambiente_fornecedor}, banco ${banco_dados}):`, error);
     res.status(500).json({ 
       success: false, 
       error: 'Erro ao buscar produtos para o cliente no ERP.', 
@@ -782,47 +782,47 @@ app.post('/api/sync/send-produtos-fornecedor-para-cliente', authenticateEnvironm
   } finally {
     if (connection) {
       connection.release();
-      console.log('ÃÂ°ÃÂÃÂÃÂ ConexÃÂÃÂ£o liberada para busca de produtos do cliente.');
+      console.log('ÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂ ConexÃÂÃÂÃÂÃÂ£o liberada para busca de produtos do cliente.');
     }
   }
 });
 
 // === ROTA: Cancelar pedido do fornecedor ===
 app.post('/api/sync/cancel-pedido-fornecedor', async (req, res) => {
-  console.log('ÃÂ°ÃÂÃÂÃÂ« REQUISIÃÂÃÂÃÂÃÂO PARA CANCELAR PEDIDO DO FORNECEDOR');
+  console.log('ÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂ« REQUISIÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂO PARA CANCELAR PEDIDO DO FORNECEDOR');
   
   const banco_dados = req.headers['banco_dados'];
   const headerUser = req.headers['usuario'];
   const headerPass = req.headers['senha'];
   const { id_pedido, motivo_cancelamento } = req.body;
 
-  console.log('ÃÂ°ÃÂÃÂÃÂ DADOS RECEBIDOS:');
+  console.log('ÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂ DADOS RECEBIDOS:');
   console.log(`   - Banco de dados: ${banco_dados}`);
   console.log(`   - ID Pedido: ${id_pedido}`);
   console.log(`   - Motivo: ${motivo_cancelamento}`);
 
-  // ValidaÃÂÃÂ§ÃÂÃÂ£o das credenciais
+  // ValidaÃÂÃÂÃÂÃÂ§ÃÂÃÂÃÂÃÂ£o das credenciais
   if (headerUser !== 'mentorweb_fornecedor' || headerPass !== 'mentorweb_sync_forn_2024') {
-    console.warn('ÃÂ¢ÃÂÃÂ CREDENCIAIS DE SISTEMA INVÃÂÃÂLIDAS');
-    return res.status(401).json({ error: "Credenciais de sincronizaÃÂÃÂ§ÃÂÃÂ£o invÃÂÃÂ¡lidas." });
+    console.warn('ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ CREDENCIAIS DE SISTEMA INVÃÂÃÂÃÂÃÂLIDAS');
+    return res.status(401).json({ error: "Credenciais de sincronizaÃÂÃÂÃÂÃÂ§ÃÂÃÂÃÂÃÂ£o invÃÂÃÂÃÂÃÂ¡lidas." });
   }
 
   if (!banco_dados || !id_pedido) {
-    return res.status(400).json({ error: 'Banco de dados e ID do pedido sÃÂÃÂ£o obrigatÃÂÃÂ³rios.' });
+    return res.status(400).json({ error: 'Banco de dados e ID do pedido sÃÂÃÂÃÂÃÂ£o obrigatÃÂÃÂÃÂÃÂ³rios.' });
   }
 
   let connection;
   try {
-    console.log(`ÃÂ°ÃÂÃÂÃÂ CONECTANDO AO BANCO: ${banco_dados}`);
+    console.log(`ÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂ CONECTANDO AO BANCO: ${banco_dados}`);
     const pool = await getDatabasePool(banco_dados);
     connection = await pool.getConnection();
 
     // --- PONTO DE AJUSTE AQUI ---
-    // 1. Define o offset de BrasÃÂÃÂ­lia (UTC-3)
+    // 1. Define o offset de BrasÃÂÃÂÃÂÃÂ­lia (UTC-3)
     const offsetHours = 3;
     const offsetMs = offsetHours * 60 * 60 * 1000;
     
-    // 2. Cria um novo objeto Date subtraindo o offset (HorÃÂÃÂ¡rio de BrasÃÂÃÂ­lia)
+    // 2. Cria um novo objeto Date subtraindo o offset (HorÃÂÃÂÃÂÃÂ¡rio de BrasÃÂÃÂÃÂÃÂ­lia)
     const dataBrasilia = new Date(new Date().getTime() - offsetMs);
     
     // 3. Formata para o formato MySQL 'YYYY-MM-DD HH:MM:SS'
@@ -830,7 +830,7 @@ app.post('/api/sync/cancel-pedido-fornecedor', async (req, res) => {
     // ----------------------------
     
     //const dataCancelamento = new Date().toISOString().slice(0, 19).replace('T', ' ');
-    const motivoFinal = motivo_cancelamento || 'Cancelado pelo usuÃÂÃÂ¡rio';
+    const motivoFinal = motivo_cancelamento || 'Cancelado pelo usuÃÂÃÂÃÂÃÂ¡rio';
     
     // Atualizar status, data_cancelamento e motivo_cancelamento na tb_Pedidos_Fornecedor
     const [result] = await connection.execute(
@@ -843,14 +843,14 @@ app.post('/api/sync/cancel-pedido-fornecedor', async (req, res) => {
     );
     
     if (result.affectedRows === 0) {
-      console.warn(`ÃÂ¢ÃÂÃÂ ÃÂ¯ÃÂ¸ÃÂ Pedido ${id_pedido} nÃÂÃÂ£o encontrado`);
+      console.warn(`ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ ÃÂÃÂ¯ÃÂÃÂ¸ÃÂÃÂ Pedido ${id_pedido} nÃÂÃÂÃÂÃÂ£o encontrado`);
       return res.status(404).json({ 
         success: false, 
-        error: 'Pedido nÃÂÃÂ£o encontrado.' 
+        error: 'Pedido nÃÂÃÂÃÂÃÂ£o encontrado.' 
       });
     }
 
-    console.log(`ÃÂ¢ÃÂÃÂ Pedido ${id_pedido} cancelado com sucesso no banco ${banco_dados}`);
+    console.log(`ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ Pedido ${id_pedido} cancelado com sucesso no banco ${banco_dados}`);
     console.log(`   - Data cancelamento: ${dataCancelamento}`);
     console.log(`   - Motivo: ${motivoFinal}`);
     
@@ -860,7 +860,7 @@ app.post('/api/sync/cancel-pedido-fornecedor', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('ÃÂ¢ÃÂÃÂ ERRO AO CANCELAR PEDIDO:', error);
+    console.error('ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ ERRO AO CANCELAR PEDIDO:', error);
     res.status(500).json({ 
       success: false, 
       error: 'Erro interno do servidor ao cancelar pedido.', 
@@ -869,7 +869,7 @@ app.post('/api/sync/cancel-pedido-fornecedor', async (req, res) => {
   } finally {
     if (connection) {
       connection.release();
-      console.log('ÃÂ°ÃÂÃÂÃÂ ConexÃÂÃÂ£o liberada apÃÂÃÂ³s cancelamento');
+      console.log('ÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂ ConexÃÂÃÂÃÂÃÂ£o liberada apÃÂÃÂÃÂÃÂ³s cancelamento');
     }
   }
 });
@@ -884,7 +884,7 @@ app.post('/api/sync/get-status-pedidos-fornecedor', authenticateEnvironment, asy
   const { banco_dados } = req.headers;
 
   if (!Array.isArray(ids_pedidos) || ids_pedidos.length === 0) {
-    return res.status(400).json({ error: 'IDs de pedidos sÃÂÃÂ£o obrigatÃÂÃÂ³rios.' });
+    return res.status(400).json({ error: 'IDs de pedidos sÃÂÃÂÃÂÃÂ£o obrigatÃÂÃÂÃÂÃÂ³rios.' });
   }
 
   let connection;
@@ -915,7 +915,7 @@ app.get('/api/sync/send-clientes', authenticateEnvironment, async (req, res) => 
     if (!req.isClientAppAuth) {
       return res.status(403).json({ 
         error: 'Acesso negado', 
-        details: 'Esta rota requer autenticaÃÂÃÂ§ÃÂÃÂ£o de ClienteApp.' 
+        details: 'Esta rota requer autenticaÃÂÃÂÃÂÃÂ§ÃÂÃÂÃÂÃÂ£o de ClienteApp.' 
       });
     }
 
@@ -955,7 +955,7 @@ app.get('/api/sync/send-produtos', authenticateEnvironment, async (req, res) => 
     if (!req.isClientAppAuth) {
       return res.status(403).json({ 
         error: 'Acesso negado', 
-        details: 'Esta rota requer autenticaÃÂÃÂ§ÃÂÃÂ£o de ClienteApp.' 
+        details: 'Esta rota requer autenticaÃÂÃÂÃÂÃÂ§ÃÂÃÂÃÂÃÂ£o de ClienteApp.' 
       });
     }
 
@@ -997,7 +997,7 @@ app.get('/api/sync/send-formas-pagamento', authenticateEnvironment, async (req, 
     if (!req.isClientAppAuth) {
       return res.status(403).json({  
         error: 'Acesso negado',  
-        details: 'Esta rota requer autenticaÃÂÃÂ§ÃÂÃÂ£o de ClienteApp.'  
+        details: 'Esta rota requer autenticaÃÂÃÂÃÂÃÂ§ÃÂÃÂÃÂÃÂ£o de ClienteApp.'  
       });
     }
 
@@ -1036,7 +1036,7 @@ app.get('/api/sync/send-comandas', authenticateEnvironment, async (req, res) => 
     if (!req.isClientAppAuth) {
       return res.status(403).json({  
         error: 'Acesso negado',  
-        details: 'Esta rota requer autenticaÃÂÃÂ§ÃÂÃÂ£o de ClienteApp.'  
+        details: 'Esta rota requer autenticaÃÂÃÂÃÂÃÂ§ÃÂÃÂÃÂÃÂ£o de ClienteApp.'  
       });
     }
 
@@ -1077,7 +1077,7 @@ app.post('/api/sync/update-comanda-status', async (req, res) => {
         if (!databaseName || !id_comanda || !status) {
             return res.status(400).json({
                 success: false,
-                error: 'databaseName, id_comanda e status sÃÂÃÂ£o obrigatÃÂÃÂ³rios'
+                error: 'databaseName, id_comanda e status sÃÂÃÂÃÂÃÂ£o obrigatÃÂÃÂÃÂÃÂ³rios'
             });
         }
 
@@ -1086,11 +1086,11 @@ app.post('/api/sync/update-comanda-status', async (req, res) => {
         if (!statusValidos.includes(status)) {
             return res.status(400).json({
                 success: false,
-                error: 'Status invÃÂÃÂ¡lido. Use S (disponÃÂÃÂ­vel), N (inativo) ou U (em uso)'
+                error: 'Status invÃÂÃÂÃÂÃÂ¡lido. Use S (disponÃÂÃÂÃÂÃÂ­vel), N (inativo) ou U (em uso)'
             });
         }
 
-        console.log(`ÃÂ°ÃÂÃÂÃÂ Atualizando status da comanda ${id_comanda} para "${status}" no banco ${databaseName}`);
+        console.log(`ÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂ Atualizando status da comanda ${id_comanda} para "${status}" no banco ${databaseName}`);
 
         const connection = await getDatabasePool(databaseName);
 
@@ -1104,14 +1104,14 @@ app.post('/api/sync/update-comanda-status', async (req, res) => {
         const [result] = await connection.execute(updateQuery, [status, id_comanda]);
 
         if (result.affectedRows === 0) {
-            console.log(`ÃÂ¢ÃÂÃÂ ÃÂ¯ÃÂ¸ÃÂ Nenhuma comanda encontrada com cÃÂÃÂ³digo ${id_comanda}`);
+            console.log(`ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ ÃÂÃÂ¯ÃÂÃÂ¸ÃÂÃÂ Nenhuma comanda encontrada com cÃÂÃÂÃÂÃÂ³digo ${id_comanda}`);
             return res.json({
                 success: false,
-                error: 'Comanda nÃÂÃÂ£o encontrada'
+                error: 'Comanda nÃÂÃÂÃÂÃÂ£o encontrada'
             });
         }
 
-        console.log(`ÃÂ¢ÃÂÃÂ Status da comanda ${id_comanda} atualizado para "${status}"`);
+        console.log(`ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ Status da comanda ${id_comanda} atualizado para "${status}"`);
 
         res.json({
             success: true,
@@ -1121,7 +1121,7 @@ app.post('/api/sync/update-comanda-status', async (req, res) => {
         });
 
     } catch (error) {
-        console.error('ÃÂ¢ÃÂÃÂ Erro ao atualizar status da comanda:', error);
+        console.error('ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ Erro ao atualizar status da comanda:', error);
         res.status(500).json({
             success: false,
             error: error.message
@@ -1139,11 +1139,11 @@ app.post('/api/sync/get-comandas', async (req, res) => {
         if (!databaseName) {
             return res.status(400).json({
                 success: false,
-                error: 'databaseName ÃÂÃÂ© obrigatÃÂÃÂ³rio'
+                error: 'databaseName ÃÂÃÂÃÂÃÂ© obrigatÃÂÃÂÃÂÃÂ³rio'
             });
         }
 
-        console.log(`ÃÂ°ÃÂÃÂÃÂ Obtendo comandas do banco ${databaseName}${filtro_status ? ` com filtro status="${filtro_status}"` : ''}`);
+        console.log(`ÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂ Obtendo comandas do banco ${databaseName}${filtro_status ? ` com filtro status="${filtro_status}"` : ''}`);
 
         const connection = await getDatabasePool(databaseName);
 
@@ -1161,7 +1161,7 @@ app.post('/api/sync/get-comandas', async (req, res) => {
 
         const [comandas] = await connection.execute(query, params);
 
-        console.log(`ÃÂ¢ÃÂÃÂ ${comandas.length} comandas encontradas${filtro_status ? ` (status: ${filtro_status})` : ''}`);
+        console.log(`ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ ${comandas.length} comandas encontradas${filtro_status ? ` (status: ${filtro_status})` : ''}`);
 
         res.json({
             success: true,
@@ -1170,7 +1170,7 @@ app.post('/api/sync/get-comandas', async (req, res) => {
         });
 
     } catch (error) {
-        console.error('ÃÂ¢ÃÂÃÂ Erro ao obter comandas:', error);
+        console.error('ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ Erro ao obter comandas:', error);
         res.status(500).json({
             success: false,
             error: 'Erro ao buscar comandas do banco de dados',
@@ -1179,13 +1179,13 @@ app.post('/api/sync/get-comandas', async (req, res) => {
     }
 });
 
-// Rota para receber pedidos do cliente (COMPATÃÂÃÂVEL com PrÃÂÃÂ©-venda E Pedidos Integrados)
+// Rota para receber pedidos do cliente (COMPATÃÂÃÂÃÂÃÂVEL com PrÃÂÃÂÃÂÃÂ©-venda E Pedidos Integrados)
 app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) => {
   try {
     if (!req.isClientAppAuth) {
       return res.status(403).json({  
         error: 'Acesso negado',  
-        details: 'Esta rota requer autenticaÃÂÃÂ§ÃÂÃÂ£o de ClienteApp.'  
+        details: 'Esta rota requer autenticaÃÂÃÂÃÂÃÂ§ÃÂÃÂÃÂÃÂ£o de ClienteApp.'  
       });
     }
 
@@ -1194,10 +1194,10 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
 
     // Detectar o formato dos dados recebidos
     if (Array.isArray(body.pedidos)) {
-      // Formato ANTIGO da prÃÂÃÂ©-venda: { pedidos: [ {pedido1}, {pedido2}, ... ] }
+      // Formato ANTIGO da prÃÂÃÂÃÂÃÂ©-venda: { pedidos: [ {pedido1}, {pedido2}, ... ] }
       pedidosParaProcessar = body.pedidos;
     } else if (body.id_pedido_base44 || body.data) {
-      // Formato NOVO dos Pedidos Integrados: um objeto ÃÂÃÂºnico com dados do pedido
+      // Formato NOVO dos Pedidos Integrados: um objeto ÃÂÃÂÃÂÃÂºnico com dados do pedido
       pedidosParaProcessar = [{
         data: body.data,
         hora: body.hora,
@@ -1207,12 +1207,12 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
         total_produtos: body.total_produtos,
         observacao: body.observacao ?? null,
         status: body.status || 'pendente',
-        itens: body.produtos || [] // No novo formato, os produtos vÃÂÃÂªm como "produtos"
+        itens: body.produtos || [] // No novo formato, os produtos vÃÂÃÂÃÂÃÂªm como "produtos"
       }];
     } else {
       return res.status(400).json({ 
-        error: 'Formato de dados invÃÂÃÂ¡lido.',
-        details: 'Esperado array de pedidos ou objeto ÃÂÃÂºnico com dados do pedido.'
+        error: 'Formato de dados invÃÂÃÂÃÂÃÂ¡lido.',
+        details: 'Esperado array de pedidos ou objeto ÃÂÃÂÃÂÃÂºnico com dados do pedido.'
       });
     }
 
@@ -1248,7 +1248,7 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
         ]);
         const newPedidoId = pedidoResult.insertId;
         
-        console.log(`ÃÂ¢ÃÂÃÂ Pedido inserido com ID: ${newPedidoId}`);
+        console.log(`ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ Pedido inserido com ID: ${newPedidoId}`);
         
         // 2. Inserir os produtos do pedido
         if (Array.isArray(pedido.itens) && pedido.itens.length > 0) {
@@ -1269,7 +1269,7 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
           ]);
 
           await connection.query(produtoQuery, [produtosValues]);
-          console.log(`ÃÂ¢ÃÂÃÂ ${produtosValues.length} produtos inseridos para o pedido ${newPedidoId}`);
+          console.log(`ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ ${produtosValues.length} produtos inseridos para o pedido ${newPedidoId}`);
         }
 
         await connection.commit();
@@ -1285,10 +1285,10 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
         res.status(200).json({
           success: true,
           id_lcto_erp: insertedPedidos[0].id_lcto_erp,
-          message: 'Pedido (prÃÂÃÂ©-venda) recebido e salvo com sucesso'
+          message: 'Pedido (prÃÂÃÂÃÂÃÂ©-venda) recebido e salvo com sucesso'
         });
       } else {
-        // Formato antigo (mÃÂÃÂºltiplos pedidos)
+        // Formato antigo (mÃÂÃÂÃÂÃÂºltiplos pedidos)
         res.status(200).json({
           success: true,
           message: 'Pedidos recebidos e salvos com sucesso',
@@ -1297,7 +1297,7 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
       }
 
     } catch (error) {
-      console.error('ÃÂ¢ÃÂÃÂ Erro ao salvar pedidos do cliente:', error);
+      console.error('ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ Erro ao salvar pedidos do cliente:', error);
       if (connection) {
         await connection.rollback();
       }
@@ -1311,7 +1311,7 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
       }
     }
   } catch (error) {
-    console.error('ÃÂ¢ÃÂÃÂ Erro fora do bloco transacional ao processar receive-pedidos:', error);
+    console.error('ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ Erro fora do bloco transacional ao processar receive-pedidos:', error);
     res.status(500).json({
       error: 'Erro fatal ao processar pedidos',
       details: error.message
@@ -1322,7 +1322,7 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
 // ROTA: Buscar lista de pedidos (chamada pelo erpSync action 'get_pedidos')
 app.get('/api/sync/send-pedidos-list', authenticateEnvironment, async (req, res) => {
   if (!req.isClientAppAuth) {
-    return res.status(403).json({ error: 'Acesso negado. Apenas sincronizaÃÂÃÂ§ÃÂÃÂ£o de cliente pode buscar pedidos.' });
+    return res.status(403).json({ error: 'Acesso negado. Apenas sincronizaÃÂÃÂÃÂÃÂ§ÃÂÃÂÃÂÃÂ£o de cliente pode buscar pedidos.' });
   }
 
   const { banco_dados } = req.headers;
@@ -1364,17 +1364,17 @@ app.get('/api/sync/send-pedidos-list', authenticateEnvironment, async (req, res)
   }
 });
 
-// ROTA: Buscar itens de um pedido especÃÂÃÂ­fico (chamada pelo erpSync action 'get_itens_pedido')
+// ROTA: Buscar itens de um pedido especÃÂÃÂÃÂÃÂ­fico (chamada pelo erpSync action 'get_itens_pedido')
 app.post('/api/sync/send-itens-pedido', authenticateEnvironment, async (req, res) => {
   if (!req.isClientAppAuth) {
-    return res.status(403).json({ error: 'Acesso negado. Apenas sincronizaÃÂÃÂ§ÃÂÃÂ£o de cliente pode buscar itens do pedido.' });
+    return res.status(403).json({ error: 'Acesso negado. Apenas sincronizaÃÂÃÂÃÂÃÂ§ÃÂÃÂÃÂÃÂ£o de cliente pode buscar itens do pedido.' });
   }
 
   const { codigo_pedido } = req.body;
   const { banco_dados } = req.headers;
 
   if (!codigo_pedido) {
-    return res.status(400).json({ error: 'CÃÂÃÂ³digo do pedido ÃÂÃÂ© obrigatÃÂÃÂ³rio.' });
+    return res.status(400).json({ error: 'CÃÂÃÂÃÂÃÂ³digo do pedido ÃÂÃÂÃÂÃÂ© obrigatÃÂÃÂÃÂÃÂ³rio.' });
   }
 
   let connection;
@@ -1382,7 +1382,7 @@ app.post('/api/sync/send-itens-pedido', authenticateEnvironment, async (req, res
     const pool = await getDatabasePool(banco_dados);
     connection = await pool.getConnection();
 
-    // A MUDANÃÂÃÂA ESTÃÂÃÂ AQUI: Adicionado pp.observacao na linha abaixo
+    // A MUDANÃÂÃÂÃÂÃÂA ESTÃÂÃÂÃÂÃÂ AQUI: Adicionado pp.observacao na linha abaixo
     const [rows] = await connection.execute(`
       SELECT
         pp.codigo,
@@ -1419,7 +1419,7 @@ app.post('/api/sync/send-itens-pedido', authenticateEnvironment, async (req, res
 // ROTA: Buscar dados para analytics (chamada pelo erpSync action 'get_analytics')
 app.get('/api/sync/send-analytics', authenticateEnvironment, async (req, res) => {
   if (!req.isClientAppAuth) {
-    return res.status(403).json({ error: 'Acesso negado. Apenas sincronizaÃÂÃÂ§ÃÂÃÂ£o de cliente pode buscar analytics.' });
+    return res.status(403).json({ error: 'Acesso negado. Apenas sincronizaÃÂÃÂÃÂÃÂ§ÃÂÃÂÃÂÃÂ£o de cliente pode buscar analytics.' });
   }
 
   const { banco_dados } = req.headers;
@@ -1429,35 +1429,35 @@ app.get('/api/sync/send-analytics', authenticateEnvironment, async (req, res) =>
     const pool = await getDatabasePool(banco_dados);
     connection = await pool.getConnection();
 
-    // Obter data atual e data do mÃÂÃÂªs anterior
+    // Obter data atual e data do mÃÂÃÂÃÂÃÂªs anterior
     const agora = new Date();
     const mesAtual = agora.getMonth() + 1;
     const anoAtual = agora.getFullYear();
     const mesAnterior = mesAtual === 1 ? 12 : mesAtual - 1;
     const anoAnterior = mesAtual === 1 ? anoAtual - 1 : anoAtual;
 
-    // Vendas do mÃÂÃÂªs atual
+    // Vendas do mÃÂÃÂÃÂÃÂªs atual
     const [vendasMesAtual] = await connection.execute(`
       SELECT COALESCE(SUM(total_produtos), 0) as total
       FROM tb_pedidos
       WHERE MONTH(data) = ? AND YEAR(data) = ?
     `, [mesAtual, anoAtual]);
 
-    // Vendas do mÃÂÃÂªs anterior
+    // Vendas do mÃÂÃÂÃÂÃÂªs anterior
     const [vendasMesAnterior] = await connection.execute(`
       SELECT COALESCE(SUM(total_produtos), 0) as total
       FROM tb_pedidos
       WHERE MONTH(data) = ? AND YEAR(data) = ?
     `, [mesAnterior, anoAnterior]);
 
-    // Pedidos do mÃÂÃÂªs atual
+    // Pedidos do mÃÂÃÂÃÂÃÂªs atual
     const [pedidosMesAtual] = await connection.execute(`
       SELECT COUNT(*) as total
       FROM tb_pedidos
       WHERE MONTH(data) = ? AND YEAR(data) = ?
     `, [mesAtual, anoAtual]);
 
-    // Pedidos do mÃÂÃÂªs anterior
+    // Pedidos do mÃÂÃÂÃÂÃÂªs anterior
     const [pedidosMesAnterior] = await connection.execute(`
       SELECT COUNT(*) as total
       FROM tb_pedidos
@@ -1478,7 +1478,7 @@ app.get('/api/sync/send-analytics', authenticateEnvironment, async (req, res) =>
       WHERE ativo = 'S'
     `);
 
-    // Produtos mais vendidos (aproximaÃÂÃÂ§ÃÂÃÂ£o)
+    // Produtos mais vendidos (aproximaÃÂÃÂÃÂÃÂ§ÃÂÃÂÃÂÃÂ£o)
     const [produtosMaisVendidos] = await connection.execute(`
       SELECT
         p.codigo,
@@ -1519,7 +1519,7 @@ app.get('/api/sync/send-analytics', authenticateEnvironment, async (req, res) =>
       },
       clientes: {
         total: parseInt(totalClientes[0].total),
-        novosClientes: 0 // VocÃÂÃÂª pode implementar lÃÂÃÂ³gica para novos clientes se necessÃÂÃÂ¡rio
+        novosClientes: 0 // VocÃÂÃÂÃÂÃÂª pode implementar lÃÂÃÂÃÂÃÂ³gica para novos clientes se necessÃÂÃÂÃÂÃÂ¡rio
       },
       produtos: {
         total: parseInt(totalProdutos[0].total),
@@ -1542,6 +1542,77 @@ app.get('/api/sync/send-analytics', authenticateEnvironment, async (req, res) =>
     res.status(500).json({
       success: false,
       error: 'Erro interno do servidor ao buscar analytics.',
+      details: error.message
+    });
+  } finally {
+    if (connection) connection.release();
+  }
+});
+
+
+// ==========================================
+// ENDPOINT: GET INDICADORES (tb_indicadores)
+// ==========================================
+app.post('/api/sync/send-indicadores', authenticateEnvironment, async (req, res) => {
+  let connection;
+  try {
+    const banco_dados = req.headers['banco_dados'] || req.headers['x-database'];
+    if (!banco_dados) {
+      return res.status(400).json({ success: false, error: 'banco_dados não informado nos headers.' });
+    }
+
+    const pool = await getPool(banco_dados);
+    connection = await pool.getConnection();
+
+    const { data_inicio, data_fim, nome_relatorio } = req.body;
+
+    let query = 'SELECT Codigo, Data, Nome_Relatorio, Descricao, Valor FROM tb_indicadores WHERE 1=1';
+    const params = [];
+
+    if (data_inicio && data_fim) {
+      query += ' AND Data BETWEEN ? AND ?';
+      params.push(data_inicio, data_fim);
+    } else if (data_inicio) {
+      query += ' AND Data >= ?';
+      params.push(data_inicio);
+    } else if (data_fim) {
+      query += ' AND Data <= ?';
+      params.push(data_fim);
+    }
+
+    if (nome_relatorio) {
+      query += ' AND Nome_Relatorio = ?';
+      params.push(nome_relatorio);
+    }
+
+    query += ' ORDER BY Data DESC, Descricao ASC';
+
+    const [rows] = await connection.execute(query, params);
+
+    // Also get distinct Nome_Relatorio values for the filter dropdown
+    const [relatorios] = await connection.execute(
+      'SELECT DISTINCT Nome_Relatorio FROM tb_indicadores WHERE Nome_Relatorio IS NOT NULL AND Nome_Relatorio != \"\" ORDER BY Nome_Relatorio ASC'
+    );
+
+    // Also get distinct dates for reference
+    const [datas] = await connection.execute(
+      'SELECT DISTINCT Data FROM tb_indicadores ORDER BY Data DESC'
+    );
+
+    console.log(`Indicadores: ${rows.length} registros encontrados para banco ${banco_dados}`);
+
+    res.json({
+      success: true,
+      indicadores: rows,
+      relatorios_disponiveis: relatorios.map(r => r.Nome_Relatorio),
+      datas_disponiveis: datas.map(d => d.Data),
+      total: rows.length
+    });
+  } catch (error) {
+    console.error(`Erro ao buscar indicadores do banco ${req.headers['banco_dados']}:`, error);
+    res.status(500).json({
+      success: false,
+      error: 'Erro interno do servidor ao buscar indicadores.',
       details: error.message
     });
   } finally {
