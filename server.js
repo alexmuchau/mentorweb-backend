@@ -84,7 +84,7 @@ async function getDatabasePool(databaseName) {
     connection.release();
     console.log(`Pool de conexÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ£o criado e testado para o banco de dados: ${databaseName}`);
   } catch (error) {
-    console.error(`Erro ao criar ou testar pool para o banco de dados ${databaseName}:`, error);
+    console.error(`[${new Date().toISOString()}]`, `Erro ao criar ou testar pool para o banco de dados ${databaseName}:`, error);
     // Em caso de erro na conexÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ£o inicial, remova o pool para que uma nova tentativa possa ser feita
     delete dbPools[databaseName];
     throw new Error(`NÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ£o foi possÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ­vel conectar ao banco de dados ${databaseName}.`);
@@ -141,7 +141,7 @@ const authenticateEnvironment = async (req, res, next) => {
     return res.status(401).json({ error: 'Credenciais de ambiente invÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¡lidas ou inativas.' });
 
   } catch (error) {
-    console.error(`Erro no middleware authenticateEnvironment para banco ${banco_dados}:`, error);
+    console.error(`[${new Date().toISOString()}]`, `Erro no middleware authenticateEnvironment para banco ${banco_dados}:`, error);
     if (error.message && error.message.includes('NÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ£o foi possÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ­vel conectar ao banco de dados')) {
         return res.status(401).json({ error: 'Falha na conexÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ£o com o banco de dados do ambiente.', details: error.message });
     }
@@ -213,7 +213,7 @@ app.post('/api/sync/authenticate-fornecedor-user', async (req, res) => {
      });
 
   } catch (error) {
-    console.error('Erro ao autenticar usuÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¡rio fornecedor:', error);
+    console.error(`[${new Date().toISOString()}]`, 'Erro ao autenticar usuÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¡rio fornecedor:', error);
     res.status(500).json({
       success: false,
       error: 'Erro interno do servidor ao autenticar usuÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¡rio.',
@@ -306,7 +306,7 @@ app.post('/api/sync/send-pedido-fornecedor', authenticateEnvironment, async (req
     });
 
   } catch (error) {
-    console.error('Erro ao salvar pedido do fornecedor:', error);
+    console.error(`[${new Date().toISOString()}]`, 'Erro ao salvar pedido do fornecedor:', error);
     if (connection) {
       await connection.rollback();
     }
@@ -402,7 +402,7 @@ app.post('/api/sync/receive-pedido-fornecedor', authenticateEnvironment, async (
 
   } catch (error) {
     if (connection) await connection.rollback();
-    console.error('Erro ao processar pedido:', error);
+    console.error(`[${new Date().toISOString()}]`, 'Erro ao processar pedido:', error);
     res.status(500).json({
       success: false,
       error: 'Erro interno do servidor',
@@ -521,7 +521,7 @@ app.post('/api/sync/receive-pedido-cliente-fornecedor', authenticateEnvironment,
     });
 
   } catch (error) {
-    console.error('ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ Erro ao salvar pedido de cliente para fornecedor:', error);
+    console.error(`[${new Date().toISOString()}]`, 'ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ Erro ao salvar pedido de cliente para fornecedor:', error);
     if (connection) await connection.rollback();
     return res.status(500).json({
       success: false,
@@ -567,7 +567,7 @@ app.get('/api/sync/send-produtos-fornecedor', authenticateEnvironment, async (re
     });
 
   } catch (error) {
-    console.error(`Erro ao buscar produtos do fornecedor (${banco_dados}):`, error);
+    console.error(`[${new Date().toISOString()}]`, `Erro ao buscar produtos do fornecedor (${banco_dados}):`, error);
     res.status(500).json({
       success: false,
       error: 'Erro interno do servidor ao buscar produtos do fornecedor.',
@@ -648,7 +648,7 @@ app.post('/api/erp/inativar-usuario-fornecedor', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ ERRO CRÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂTICO DURANTE INATIVAÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂO:', error);
+    console.error(`[${new Date().toISOString()}]`, 'ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ ERRO CRÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂTICO DURANTE INATIVAÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂO:', error);
     res.status(500).json({
       success: false,
       error: 'Erro interno do servidor ao inativar usuÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¡rio.',
@@ -704,7 +704,7 @@ app.get('/api/sync/send-ambientes-fornecedor', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ ERRO AO BUSCAR AMBIENTES:', error);
+    console.error(`[${new Date().toISOString()}]`, 'ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ ERRO AO BUSCAR AMBIENTES:', error);
     res.status(500).json({ 
       success: false, 
       error: 'Erro ao buscar ambientes no ERP do fornecedor.', 
@@ -773,7 +773,7 @@ app.post('/api/sync/send-produtos-fornecedor-para-cliente', authenticateEnvironm
     });
 
   } catch (error) {
-    console.error(`ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ ERRO AO BUSCAR PRODUTOS PARA O CLIENTE (ambiente ${id_ambiente_fornecedor}, banco ${banco_dados}):`, error);
+    console.error(`[${new Date().toISOString()}]`, `ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ ERRO AO BUSCAR PRODUTOS PARA O CLIENTE (ambiente ${id_ambiente_fornecedor}, banco ${banco_dados}):`, error);
     res.status(500).json({ 
       success: false, 
       error: 'Erro ao buscar produtos para o cliente no ERP.', 
@@ -860,7 +860,7 @@ app.post('/api/sync/cancel-pedido-fornecedor', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ ERRO AO CANCELAR PEDIDO:', error);
+    console.error(`[${new Date().toISOString()}]`, 'ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ ERRO AO CANCELAR PEDIDO:', error);
     res.status(500).json({ 
       success: false, 
       error: 'Erro interno do servidor ao cancelar pedido.', 
@@ -900,7 +900,7 @@ app.post('/api/sync/get-status-pedidos-fornecedor', authenticateEnvironment, asy
 
     res.json({ success: true, pedidos: rows });
   } catch (error) {
-    console.error('Erro ao buscar status dos pedidos:', error);
+    console.error(`[${new Date().toISOString()}]`, 'Erro ao buscar status dos pedidos:', error);
     res.status(500).json({ success: false, error: error.message });
   } finally {
     if (connection) connection.release();
@@ -941,7 +941,7 @@ app.get('/api/sync/send-clientes', authenticateEnvironment, async (req, res) => 
     });
 
   } catch (error) {
-    console.error('Erro ao buscar clientes:', error);
+    console.error(`[${new Date().toISOString()}]`, 'Erro ao buscar clientes:', error);
     res.status(500).json({
       error: 'Erro interno do servidor',
       details: error.message
@@ -983,7 +983,7 @@ app.get('/api/sync/send-produtos', authenticateEnvironment, async (req, res) => 
     });
 
   } catch (error) {
-    console.error('Erro ao buscar produtos do cliente:', error);
+    console.error(`[${new Date().toISOString()}]`, 'Erro ao buscar produtos do cliente:', error);
     res.status(500).json({
       error: 'Erro interno do servidor',
       details: error.message
@@ -1022,7 +1022,7 @@ app.get('/api/sync/send-formas-pagamento', authenticateEnvironment, async (req, 
       if (connection) connection.release();
     }
   } catch (error) {
-    console.error('Erro ao buscar formas de pagamento do cliente:', error);
+    console.error(`[${new Date().toISOString()}]`, 'Erro ao buscar formas de pagamento do cliente:', error);
     res.status(500).json({
       error: 'Erro interno do servidor',
       details: error.message
@@ -1061,7 +1061,7 @@ app.get('/api/sync/send-comandas', authenticateEnvironment, async (req, res) => 
       if (connection) connection.release();
     }
   } catch (error) {
-    console.error('Erro ao buscar comandas do cliente:', error);
+    console.error(`[${new Date().toISOString()}]`, 'Erro ao buscar comandas do cliente:', error);
     res.status(500).json({
       error: 'Erro interno do servidor',
       details: error.message
@@ -1121,7 +1121,7 @@ app.post('/api/sync/update-comanda-status', async (req, res) => {
         });
 
     } catch (error) {
-        console.error('ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ Erro ao atualizar status da comanda:', error);
+        console.error(`[${new Date().toISOString()}]`, 'ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ Erro ao atualizar status da comanda:', error);
         res.status(500).json({
             success: false,
             error: error.message
@@ -1170,7 +1170,7 @@ app.post('/api/sync/get-comandas', async (req, res) => {
         });
 
     } catch (error) {
-        console.error('ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ Erro ao obter comandas:', error);
+        console.error(`[${new Date().toISOString()}]`, 'ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ Erro ao obter comandas:', error);
         res.status(500).json({
             success: false,
             error: 'Erro ao buscar comandas do banco de dados',
@@ -1297,7 +1297,7 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
       }
 
     } catch (error) {
-      console.error('ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ Erro ao salvar pedidos do cliente:', error);
+      console.error(`[${new Date().toISOString()}]`, 'ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ Erro ao salvar pedidos do cliente:', error);
       if (connection) {
         await connection.rollback();
       }
@@ -1311,7 +1311,7 @@ app.post('/api/sync/receive-pedidos', authenticateEnvironment, async (req, res) 
       }
     }
   } catch (error) {
-    console.error('ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ Erro fora do bloco transacional ao processar receive-pedidos:', error);
+    console.error(`[${new Date().toISOString()}]`, 'ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ Erro fora do bloco transacional ao processar receive-pedidos:', error);
     res.status(500).json({
       error: 'Erro fatal ao processar pedidos',
       details: error.message
@@ -1353,7 +1353,7 @@ app.get('/api/sync/send-pedidos-list', authenticateEnvironment, async (req, res)
     });
 
   } catch (error) {
-    console.error(`Erro ao buscar pedidos do banco ${banco_dados}:`, error);
+    console.error(`[${new Date().toISOString()}]`, `Erro ao buscar pedidos do banco ${banco_dados}:`, error);
     res.status(500).json({
       success: false,
       error: 'Erro interno do servidor ao buscar pedidos.',
@@ -1405,7 +1405,7 @@ app.post('/api/sync/send-itens-pedido', authenticateEnvironment, async (req, res
     });
 
   } catch (error) {
-    console.error(`Erro ao buscar itens do pedido ${codigo_pedido} no banco ${banco_dados}:`, error);
+    console.error(`[${new Date().toISOString()}]`, `Erro ao buscar itens do pedido ${codigo_pedido} no banco ${banco_dados}:`, error);
     res.status(500).json({
       success: false,
       error: 'Erro interno do servidor ao buscar itens do pedido.',
@@ -1538,7 +1538,7 @@ app.get('/api/sync/send-analytics', authenticateEnvironment, async (req, res) =>
     });
 
   } catch (error) {
-    console.error(`Erro ao buscar analytics do banco ${banco_dados}:`, error);
+    console.error(`[${new Date().toISOString()}]`, `Erro ao buscar analytics do banco ${banco_dados}:`, error);
     res.status(500).json({
       success: false,
       error: 'Erro interno do servidor ao buscar analytics.',
@@ -1608,7 +1608,7 @@ app.post('/api/sync/send-indicadores', authenticateEnvironment, async (req, res)
       total: rows.length
     });
   } catch (error) {
-    console.error(`Erro ao buscar indicadores do banco ${req.headers['banco_dados']}:`, error);
+    console.error(`[${new Date().toISOString()}]`, `Erro ao buscar indicadores do banco ${req.headers['banco_dados']}:`, error);
     res.status(500).json({
       success: false,
       error: 'Erro interno do servidor ao buscar indicadores.',
