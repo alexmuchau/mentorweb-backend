@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mentorweb-backend",
+  "main": "src/index.js",
+  "compatibility_date": "2025-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  // Variáveis NÃO secretas. Segredos (DB_USER, DB_PASSWORD, SUPPLIER_SYNC_*, SYSTEM_ADMIN_*)
+  // são cadastrados com `wrangler secret put` — ver AGENTS.md.
+  "vars": {
+    "DB_HOST": "162.240.226.40",
+    "DB_PORT": "3306",
+    "DB_TIMEZONE": "-03:00",
+    "ALLOWED_ORIGINS": ""
+  },
+
+  "routes": [{ "pattern": "mentorweb.muchau.com.br", "custom_domain": true }]
+}
