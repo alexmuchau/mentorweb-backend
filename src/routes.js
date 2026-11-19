@@ -1470,3 +1470,160 @@ app.post('/api/sync/send-indicadores', authenticateEnvironment, async (req, res)
     if (connection) connection.release();
   }
 });
+
+// ==========================================
+// MODULO CT-e (tb_cte_movel)
+// ==========================================
+const CTE_TABLE = 'tb_cte_movel';
+
+const proximoCteCodigo = async (connection) => {
+  const [rows] = await connection.execute(`SELECT COALESCE(MAX(Codigo), 0) + 1 AS proximo FROM ${CTE_TABLE}`);
+  return rows[0].proximo;
+};
+
+// Listas de apoio: empresas e operacoes de CT-e
+app.get('/api/sync/send-cte-auxiliares', authenticateEnvironment, async (req, res) => {
+  let connection;
+  try {
+    if (!req.isClientAppAuth) {
+      return res.status(403).json({ success: false, error: 'Acesso negado', details: 'Esta rota requer autenticacao de ClienteApp.' });
+    }
+
+    connection = await req.pool.getConnection();
+
+    const [empresas] = await connection.execute(
+      "SELECT Codigo, Empresa FROM tb_empresas WHERE Ativo = '-1' ORDER BY Empresa"
+    );
+    const [operacoes] = await connection.execute(
+      "SELECT Codigo, Descricao FROM tb_cte_grade_2 WHERE Ativo = '-1' ORDER BY Descricao"
+    );
+
+    res.json({ success: true, empresas, operacoes });
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}]`, 'Erro ao buscar dados auxiliares de CT-e:', error);
+    res.status(500).json({ success: false, error: 'Erro interno do servidor ao buscar dados auxiliares de CT-e.', details: error.message });
+  } finally {
+    if (connection) connection.release();
+  }
+});
+
+// Grava um novo CT-e
+app.post('/api/sync/receive-cte', authenticateEnvironment, async (req, res) => {
+  let connection;
+  try {
+    if (!req.isClientAppAuth) {
+      return res.status(403).json({ success: false, error: 'Acesso negado', details: 'Esta rota requer autenticacao de ClienteApp.' });
+    }
+
+    const {
+      id_empresa, id_operacao, globalizado, id_remetente, id_destinatario, tomador,
+      valor_frete, valor_carga, produto_predominante, quantidade, unidade, chave_acesso, data_previsao
+    } = req.body || {};
+
+    if (!id_empresa || !id_operacao || !id_remetente || !id_destinatario ||
+        valor_frete === undefined || valor_carga === undefined || !produto_predominante ||
+        quantidade === undefined || !chave_acesso || !data_previsao) {
+      return res.status(400).json({ success: false, error: 'Dados do CT-e incompletos.' });
+    }
+
+    const chaveLimpa = String(chave_acesso).replace(/\D/g, '');
+    if (chaveLimpa.length !== 44) {
+      return res.status(400).json({ success: false, error: 'A chave de acesso da NF-e deve ter 44 digitos.' });
+    }
+
+    connection = await req.pool.getConnection();
+    await connection.beginTransaction();
+
+    const codigo = await proximoCteCodigo(connection);
+
+    await connection.execute(
+      `INSERT INTO ${CTE_TABLE}
+        (Codigo, IDEmpresa, Id_Operacao, Globalizado, Id_Remetente, Id_Destinatario, Tomador,
+         Valor_Frete, Valor_Carga, Prod_Predominante, Quantidade, Unidade, Chave_Acesso_NFe,
+         Data_Previsao, Data_Criacao, Hora_Criacao, Data_Processado, Hora_Processado, Processado)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW(), NOW(), '0')`,
+      [
+        codigo,
+        id_empresa,
+        id_operacao,
+        globalizado ? '-1' : '0',
+        id_remetente,
+        id_destinatario,
+        tomador || 0,
+        valor_frete,
+        valor_carga,
+        produto_predominante,
+        quantidade,
+        unidade || '00',
+        chaveLimpa,
+        data_previsao
+      ]
+    );
+
+    await connection.commit();
+
+    console.log(`[${new Date().toISOString()}]`, `CT-e ${codigo} gravado em ${CTE_TABLE} para o banco ${req.headers['banco_dados']}`);
+
+    res.json({ success: true, codigo, message: 'CT-e enviado com sucesso' });
+  } catch (error) {
+    if (connection) {
+      try { await connection.rollback(); } catch (rollbackError) { /* ignora */ }
+    }
+    console.error(`[${new Date().toISOString()}]`, 'Erro ao gravar CT-e:', error);
+    res.status(500).json({ success: false, error: 'Erro ao gravar o CT-e.', details: error.message });
+  } finally {
+    if (connection) connection.release();
+  }
+});
+
+// Lista os CT-es gerados
+app.get('/api/sync/send-ctes-list', authenticateEnvironment, async (req, res) => {
+  let connection;
+  try {
+    if (!req.isClientAppAuth) {
+      return res.status(403).json({ success: false, error: 'Acesso negado', details: 'Esta rota requer autenticacao de ClienteApp.' });
+    }
+
+    connection = await req.pool.getConnection();
+
+    const query = `
+      SELECT
+        c.Codigo,
+        c.IDEmpresa,
+        e.Empresa AS Nome_Empresa,
+        c.Id_Operacao,
+        o.Descricao AS Descricao_Operacao,
+        c.Globalizado,
+        c.Id_Remetente,
+        rem.nome AS Nome_Remetente,
+        c.Id_Destinatario,
+        dest.nome AS Nome_Destinatario,
+        c.Tomador,
+        c.Valor_Frete,
+        c.Valor_Carga,
+        c.Prod_Predominante,
+        c.Quantidade,
+        c.Unidade,
+        c.Chave_Acesso_NFe,
+        c.Data_Previsao,
+        c.Processado,
+        c.Data_Criacao
+      FROM ${CTE_TABLE} c
+      LEFT JOIN tb_clientes rem ON c.Id_Remetente = rem.codigo
+      LEFT JOIN tb_clientes dest ON c.Id_Destinatario = dest.codigo
+      LEFT JOIN tb_empresas e ON c.IDEmpresa = e.Codigo
+      LEFT JOIN tb_cte_grade_2 o ON c.Id_Operacao = o.Codigo
+      ORDER BY c.Codigo DESC
+      LIMIT 200
+    `;
+
+    const [rows] = await connection.execute(query);
+
+    res.json({ success: true, ctes: rows, total: rows.length });
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}]`, 'Erro ao buscar CT-es:', error);
+    res.status(500).json({ success: false, error: 'Erro interno do servidor ao buscar CT-es.', details: error.message });
+  } finally {
+    if (connection) connection.release();
+  }
+});
