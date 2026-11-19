@@ -1619,6 +1619,117 @@ app.post('/api/sync/send-indicadores', authenticateEnvironment, async (req, res)
   }
 });
 
+// ==========================================
+// MODULO CT-e (tb_cte)
+// ==========================================
+const CTE_TABLE = 'tb_cte';
+
+app.post('/api/sync/receive-cte', authenticateEnvironment, async (req, res) => {
+  let connection;
+  try {
+    if (!req.isClientAppAuth) {
+      return res.status(403).json({ success: false, error: 'Acesso negado', details: 'Esta rota requer autenticacao de ClienteApp.' });
+    }
+
+    const {
+      id_empresa, id_operacao, globalizado, id_remetente, id_destinatario, tomador,
+      valor_frete, valor_carga, produto_predominante, quantidade, unidade, chave_acesso, data_previsao
+    } = req.body || {};
+
+    if (!id_empresa || !id_operacao || !id_remetente || !id_destinatario ||
+        valor_frete === undefined || valor_carga === undefined || !produto_predominante ||
+        quantidade === undefined || !chave_acesso || !data_previsao) {
+      return res.status(400).json({ success: false, error: 'Dados do CT-e incompletos.' });
+    }
+
+    if (String(chave_acesso).replace(/\D/g, '').length !== 44) {
+      return res.status(400).json({ success: false, error: 'A chave de acesso da NF-e deve ter 44 digitos.' });
+    }
+
+    connection = await req.pool.getConnection();
+
+    const [result] = await connection.execute(
+      `INSERT INTO ${CTE_TABLE}
+        (Id_Empresa, Id_Operacao, Globalizado, Id_Remetente, Id_Destinatario, Tomador,
+         Valor_Do_Frete, Valor_da_Carga, Produto_Predominante, Quantidade, Unidade,
+         Chave_de_Acesso, Data_Previsao, Processado, Data_Criacao, Hora_Criacao)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'N', CURDATE(), CURTIME())`,
+      [
+        id_empresa,
+        id_operacao,
+        globalizado ? 1 : 0,
+        id_remetente,
+        id_destinatario,
+        tomador || 0,
+        valor_frete,
+        valor_carga,
+        produto_predominante,
+        quantidade,
+        unidade || '00',
+        String(chave_acesso).replace(/\D/g, ''),
+        data_previsao
+      ]
+    );
+
+    console.log(`[${new Date().toISOString()}]`, `CT-e ${result.insertId} gravado em ${CTE_TABLE} para o banco ${req.headers['banco_dados']}`);
+
+    res.json({ success: true, codigo: result.insertId, message: 'CT-e enviado com sucesso' });
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}]`, 'Erro ao gravar CT-e:', error);
+    res.status(500).json({ success: false, error: 'Erro ao gravar o CT-e.', details: error.message });
+  } finally {
+    if (connection) connection.release();
+  }
+});
+
+app.get('/api/sync/send-ctes-list', authenticateEnvironment, async (req, res) => {
+  let connection;
+  try {
+    if (!req.isClientAppAuth) {
+      return res.status(403).json({ success: false, error: 'Acesso negado', details: 'Esta rota requer autenticacao de ClienteApp.' });
+    }
+
+    connection = await req.pool.getConnection();
+
+    const query = `
+      SELECT
+        c.Codigo,
+        c.Id_Empresa,
+        c.Id_Operacao,
+        c.Globalizado,
+        c.Id_Remetente,
+        c.Id_Destinatario,
+        c.Tomador,
+        c.Valor_Do_Frete,
+        c.Valor_da_Carga,
+        c.Produto_Predominante,
+        c.Quantidade,
+        c.Unidade,
+        c.Chave_de_Acesso,
+        c.Data_Previsao,
+        c.Processado,
+        c.Data_Criacao,
+        c.Hora_Criacao,
+        rem.nome AS Nome_Remetente,
+        dest.nome AS Nome_Destinatario
+      FROM ${CTE_TABLE} c
+      LEFT JOIN tb_clientes rem ON c.Id_Remetente = rem.codigo
+      LEFT JOIN tb_clientes dest ON c.Id_Destinatario = dest.codigo
+      ORDER BY c.Codigo DESC
+      LIMIT 200
+    `;
+
+    const [rows] = await connection.execute(query);
+
+    res.json({ success: true, ctes: rows, total: rows.length });
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}]`, 'Erro ao buscar CT-es:', error);
+    res.status(500).json({ success: false, error: 'Erro interno do servidor ao buscar CT-es.', details: error.message });
+  } finally {
+    if (connection) connection.release();
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Servidor ERP Sync rodando na porta ${PORT}`);
 });
